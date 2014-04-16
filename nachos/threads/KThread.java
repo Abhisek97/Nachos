@@ -203,9 +203,11 @@ public class KThread {
 
 		currentThread.status = statusFinished;
 		
-		if (threadToWait != null)
-			threadToWait.ready();
-		threadToWait = null;
+		if (currentThread.threadToWait != null)
+		{
+			currentThread.threadToWait.ready();
+			currentThread.threadToWait = null;
+		}
 
 		sleep();
 	}
@@ -407,6 +409,13 @@ public class KThread {
 		}
 
 		public void run() {
+			if (currentThread == bTestThread)
+				cTestThread.join();
+			else if (currentThread == cTestThread)
+				dTestThread.join();
+//			else if (currentThread == dTestThread)
+//				mainTestThread.join();
+			
 			for (int i = 0; i < 5; i++) {
 				System.out.println("*** thread " + which + " looped " + i
 						+ " times");
@@ -424,9 +433,18 @@ public class KThread {
 	public static void selfTest() {
 		Lib.debug(dbgThread, "Enter KThread.selfTest");
 
+		mainTestThread = KThread.currentThread();
+		
 		KThread b = new KThread(new PingTest(1));
 		b.setName("forked thread").fork();
-//		b.join();
+		bTestThread = b;
+		KThread c = new KThread(new PingTest(2));
+		c.setName("forked thread").fork();
+		cTestThread = c;
+		KThread d = new KThread(new PingTest(3));
+		d.setName("forked thread").fork();
+		dTestThread = d;
+		b.join();
 		new PingTest(0).run();
 	}
 
@@ -480,5 +498,10 @@ public class KThread {
 	private static KThread idleThread = null;
 	
 	// Added variable cuz we are cool like that
-	private static KThread threadToWait = null;
+	private KThread threadToWait = null;
+	
+	private static KThread mainTestThread = null;
+	private static KThread bTestThread = null;
+	private static KThread cTestThread = null;
+	private static KThread dTestThread = null;
 }
