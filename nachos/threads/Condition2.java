@@ -21,6 +21,9 @@ public class Condition2 {
 	 */
 	public Condition2(Lock conditionLock) {
 		this.conditionLock = conditionLock;
+		
+		//creates a queue to hold all the sleeping threads
+		this.sleepQueue = ThreadedKernel.scheduler.newThreadQueue(false);
 	}
 
 	/**
@@ -32,9 +35,18 @@ public class Condition2 {
 	public void sleep() {
 		Lib.assertTrue(conditionLock.isHeldByCurrentThread());
 
+		//stores initial status
+		boolean initStatus = Machine.interrupt().disable();
+		
+		//adds the current thread to the queue of sleeping threads
+		sleepQueue.waitForAccess(KThread.currentThread());
+	
 		conditionLock.release();
-
+		KThread.sleep();
 		conditionLock.acquire();
+	
+		//restores initial status
+		Machine.interrupt().restore(initStatus);
 	}
 
 	/**
@@ -43,6 +55,21 @@ public class Condition2 {
 	 */
 	public void wake() {
 		Lib.assertTrue(conditionLock.isHeldByCurrentThread());
+		
+		//remove the first thread from the set of sleep threads
+		KThread nextThread = sleepQueue.nextThread();
+		
+		//stores initial status
+		boolean initStatus = Machine.interrupt().disable();
+		
+		//if it exists, disable interrupt and "wake" it by calling ready()
+		if(nextThread!=null)
+		{
+			nextThread.ready();
+		}
+		
+		//restores initial status
+		Machine.interrupt().restore(initStatus);
 	}
 
 	/**
@@ -51,7 +78,20 @@ public class Condition2 {
 	 */
 	public void wakeAll() {
 		Lib.assertTrue(conditionLock.isHeldByCurrentThread());
+		
+		KThread nextThread = sleepQueue.nextThread();
+		
+		boolean initStatus = Machine.interrupt().disable();
+		
+		while(nextThread!=null)
+		{
+			nextThread.ready();
+			nextThread = sleepQueue.nextThread();
+		}
+		
+		Machine.interrupt().restore(initStatus);
 	}
 
 	private Lock conditionLock;
+	private ThreadQueue sleepQueue;
 }
