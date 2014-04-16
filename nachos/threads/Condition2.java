@@ -56,11 +56,11 @@ public class Condition2 {
 	public void wake() {
 		Lib.assertTrue(conditionLock.isHeldByCurrentThread());
 		
-		//remove the first thread from the set of sleep threads
-		KThread nextThread = sleepQueue.nextThread();
-		
 		//stores initial status
 		boolean initStatus = Machine.interrupt().disable();
+		
+		//remove the first thread from the set of sleep threads
+		KThread nextThread = sleepQueue.nextThread();
 		
 		//if it exists, disable interrupt and "wake" it by calling ready()
 		if(nextThread!=null)
@@ -79,9 +79,9 @@ public class Condition2 {
 	public void wakeAll() {
 		Lib.assertTrue(conditionLock.isHeldByCurrentThread());
 		
-		KThread nextThread = sleepQueue.nextThread();
-		
 		boolean initStatus = Machine.interrupt().disable();
+		
+		KThread nextThread = sleepQueue.nextThread();
 		
 		while(nextThread!=null)
 		{
