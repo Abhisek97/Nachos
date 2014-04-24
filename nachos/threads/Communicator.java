@@ -159,6 +159,8 @@ public class Communicator {
 	 // variables in run, but they are passed to the tester in the constructor.
 	 private int id;
 	 
+	 private static Communicator comm = new Communicator();
+	 
 	 // Construct the object. Pass the ID of the thread plus any variables you
 	 // want to share between threads. You may want to pass a KThread as a global
 	 // variable to test join.
@@ -172,17 +174,71 @@ public class Communicator {
 		public void run() {
 		    // Use an if statement to make the different threads execute different
 		    // code.
-		    if (id == 0) {
+		    if (id > 0) {
 		        for (int i = 0; i < 5; i++) {
-		            System.out.println("Thread 0");
-		            KThread.currentThread().yield();;
+		            System.out.println("CommTester " + id + " calling speak with " + i);
+		            comm.speak(i);
+		        }
+		    } else {
+		        for (int i = 0; i < 20; i++) {
+		            System.out.println("CommTester " + id + " listening on iteration " + i);
+		            int heard = comm.listen();
+		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		    }
+		    
+		    if (id == 0)
+		    	System.out.println("Done with Communicator test 1 /////////////////////////////////");
+		    ThreadedKernel.alarm.waitUntil(2000);
+		    
+		    if (id == 0) {
+		        for (int i = 0; i < 20; i++) {
+		            System.out.println("CommTester " + id + " calling speak with " + i);
+		            comm.speak(i);
 		        }
 		    } else {
 		        for (int i = 0; i < 5; i++) {
-		            System.out.println("Thread 1");
-		            KThread.currentThread().yield();
-		        }
+		            System.out.println("CommTester " + id + " listening on iteration " + i);
+		            int heard = comm.listen();
+		            System.out.println("CommTester " + id + " heard word " + heard);		        }
 		    }
+		    
+		    if (id == 0)
+		    	System.out.println("Done with Communicator test 2 /////////////////////////////////");
+		    ThreadedKernel.alarm.waitUntil(2000);
+		    
+		    if (id == 0 || id == 4) {
+		        for (int i = 0; i < 6; i++) {
+		            System.out.println("CommTester " + id + " calling speak with " + i);
+		            comm.speak(i);
+		        }
+		    } else {
+		        for (int i = 0; i < 4; i++) {
+		            System.out.println("CommTester " + id + " listening on iteration " + i);
+		            int heard = comm.listen();
+		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		    }
+		    
+		    if (id == 0)
+		    	System.out.println("Done with Communicator test 3 /////////////////////////////////");
+		    ThreadedKernel.alarm.waitUntil(2000);
+
+		    
+		    if (id != 0 && id != 4) {
+		        for (int i = 0; i < 4; i++) {
+		            System.out.println("CommTester " + id + " calling speak with " + i);
+		            comm.speak(i);
+		        }
+		    } else {
+		        for (int i = 0; i < 6; i++) {
+		            System.out.println("CommTester " + id + " listening on iteration " + i);
+		            int heard = comm.listen();
+		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		    }
+		    
+		    if (id == 0)
+		    	System.out.println("Done with Communicator test 4 /////////////////////////////////");
+		    ThreadedKernel.alarm.waitUntil(2000);
+
 		}
 	}
 
@@ -193,9 +249,18 @@ public class Communicator {
 		
 		// Initialize your threads.
 		KThread thread1 = new KThread(new MyTester(1));
+		KThread thread2 = new KThread(new MyTester(2));
+		KThread thread3 = new KThread(new MyTester(3));
+		KThread thread4 = new KThread(new MyTester(4));
+
+
+
 		
 		// Fork your new threads.
 		thread1.fork();
+		thread2.fork();
+		thread3.fork();
+		thread4.fork();
 		
 		// This is the main thread. We can also consider this to be thread 0. So
 		// let's have it run the code in the tester class as well.

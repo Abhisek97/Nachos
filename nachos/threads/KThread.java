@@ -292,10 +292,12 @@ public class KThread {
 		Lib.assertTrue(this != currentThread);
 		
 		
-		Machine.interrupt().disable();
+		boolean status = Machine.interrupt().disable();
 		
 		threadToWait = currentThread;
 		threadToWait.sleep();
+		
+		Machine.interrupt().restore(status);
 
 	}
 
