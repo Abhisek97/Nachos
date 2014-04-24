@@ -36,19 +36,28 @@ public class Alarm {
 		
 		KnappThread currKnapp = pq.peek();
 		
-		if (currKnapp != null && 
-				Machine.timer().getTime() >= currKnapp.getWakeTime() &&
-				currKnapp.getThreadToWake() != null)
+		while ( currKnapp != null )
 		{
-			Machine.interrupt().disable();
-			
-			System.out.println("Current time: " + Machine.timer().getTime() + "\n"
-					+ "Wait time: " + currKnapp.getWakeTime());
-			
-			pq.poll();
-			
-			currKnapp.getThreadToWake().ready();
+			if (Machine.timer().getTime() >= currKnapp.getWakeTime())
+			{
+				Lib.assertTrue(currKnapp.getThreadToWake() != null);
+				Machine.interrupt().disable();
+				
+//				System.out.println("Current time: " + Machine.timer().getTime() + "\n"
+//						+ "Wait time: " + currKnapp.getWakeTime());
+				
+				pq.poll();
+				
+				currKnapp.getThreadToWake().ready();
+				
+				currKnapp = pq.peek();
+			}
+			else
+			{
+				break;
+			}
 		}
+		
 		KThread.currentThread().yield();
 	}
 
