@@ -183,7 +183,8 @@ public class Communicator {
 		        for (int i = 0; i < 20; i++) {
 		            System.out.println("CommTester " + id + " listening on iteration " + i);
 		            int heard = comm.listen();
-		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		            System.out.println("CommTester " + id + " heard word " + heard);
+		        }
 		    }
 		    
 		    if (id == 0)
@@ -199,7 +200,8 @@ public class Communicator {
 		        for (int i = 0; i < 5; i++) {
 		            System.out.println("CommTester " + id + " listening on iteration " + i);
 		            int heard = comm.listen();
-		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		            System.out.println("CommTester " + id + " heard word " + heard);
+		        }
 		    }
 		    
 		    if (id == 0)
@@ -215,7 +217,8 @@ public class Communicator {
 		        for (int i = 0; i < 4; i++) {
 		            System.out.println("CommTester " + id + " listening on iteration " + i);
 		            int heard = comm.listen();
-		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		            System.out.println("CommTester " + id + " heard word " + heard);
+		        }
 		    }
 		    
 		    if (id == 0)
@@ -232,7 +235,8 @@ public class Communicator {
 		        for (int i = 0; i < 6; i++) {
 		            System.out.println("CommTester " + id + " listening on iteration " + i);
 		            int heard = comm.listen();
-		            System.out.println("CommTester " + id + " heard word " + heard);		        }
+		            System.out.println("CommTester " + id + " heard word " + heard);
+		        }
 		    }
 		    
 		    if (id == 0)
