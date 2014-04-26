@@ -22,16 +22,15 @@ public class Communicator {
 		
 		// Speak condition
 		speakCond = new Condition2(comLock);
-		
-		speakQueue = new LinkedList<KThread>();
-		
+				
 		// Listen condition
 		listenCond = new Condition2(comLock);
+				
+		// Return condition
+		rtnCond = new Condition2(comLock);
 		
-		listenQueue = new LinkedList<KThread>();
-		
-		
-		buffer = new LinkedList<Integer>();
+		// Integer buffer
+		buffer = null;
 		
 	}
 
@@ -50,19 +49,16 @@ public class Communicator {
 		// Aquire the lock
 		comLock.acquire();
 		
-		buffer.add(new Integer(word));
-		
-		if (listenQueue.size() == 0)
+		while (buffer != null)
 		{
-			speakQueue.add(KThread.currentThread());
 			speakCond.sleep();
 		}
-		else
-		{
-			listenQueue.remove();
-			listenCond.wake();
-		}
 		
+		buffer = word;
+		
+		listenCond.wake();
+		
+		rtnCond.sleep();
 		
 		comLock.release();
 		
@@ -104,18 +100,17 @@ public class Communicator {
 		// Aquire the lock
 		comLock.acquire();
 		
-		if (speakQueue.size() == 0)
+		while (buffer == null)
 		{
-			listenQueue.add(KThread.currentThread());
 			listenCond.sleep();
 		}
-		else
-		{
-			speakQueue.remove();
-			speakCond.wake();
-		}
 		
-		wordToReturn = buffer.remove().intValue();
+		wordToReturn = buffer.intValue();
+		buffer = null;
+		
+		speakCond.wake();
+		
+		rtnCond.wake();
 		
 		comLock.release();
 		
@@ -146,9 +141,8 @@ public class Communicator {
 	private Lock comLock;
 	private Condition2 speakCond;
 	private Condition2 listenCond;
-	private LinkedList<Integer> buffer;
-	private LinkedList<KThread> speakQueue;
-	private LinkedList<KThread> listenQueue;
+	private Condition2 rtnCond;
+	private Integer buffer;
 	
 	
 	
