@@ -342,7 +342,216 @@ public class UserProcess {
 		Lib.assertNotReached("Machine.halt() did not halt machine!");
 		return 0;
 	}
-
+	
+	/**
+	 * Handle the create() system call.
+	 */
+	private int handleCreate(int file)
+	{
+		String filename = null;
+		
+		//Put this line in try catch? If fail return -1
+		filename = readVirtualMemoryString(file,256);
+		
+		if(filename == null)
+		{
+			Lib.debug(dbgProcess, "\thandleCreate: Could not read filename from Virtual Memory");
+			return -1;
+		}
+		
+		//Set to "true" to create a file if it does not already exist
+		OpenFile theFile = ThreadedKernel.fileSystem.open(filename, true);
+		
+		if(theFile == null)
+		{
+			Lib.debug(dbgProcess, "\thandleCreate: Could not open file from filesystem");
+			return -1;
+		}
+		else //theFile != null
+		{
+			int i=2;
+			for(; i<fileDescriptor.length; i++) 
+			{
+				if(fileDescriptor[i] == null)
+				{
+					fileDescriptor[i] = theFile;
+					return i;	//"Creating" the file by adding it to the file descriptor
+				}
+			}
+			if(i == fileDescriptor.length)
+			{
+				Lib.debug(dbgProcess, "\thandleCreate: No more space in file descriptor");
+				return -1;
+			}
+		}
+		
+		return -1;
+	}
+	
+	/**
+	 * Handle the open() system call.
+	 */
+	private int handleOpen(int file)
+	{
+		String filename = null;
+		
+		//Put this line in try catch? If fail return -1
+		filename = readVirtualMemoryString(file,256);
+		
+		if(filename == null)
+		{
+			Lib.debug(dbgProcess, "\thandleOpen: Could not read filename from Virtual Memory");
+			return -1;
+		}
+		
+		//Set to "false" to DON'T create a file if it does not already exist
+		OpenFile theFile = ThreadedKernel.fileSystem.open(filename, false);
+		
+		if(theFile == null)
+		{
+			Lib.debug(dbgProcess, "\thandleOpen: Could not open file from filesystem");
+			return -1;
+		}
+		else //theFile != null
+		{
+			int i=2;
+			for(; i<fileDescriptor.length; i++) 
+			{
+				if(fileDescriptor[i] == null)
+				{
+					fileDescriptor[i] = theFile;
+					return i;	//"Creating" the file by adding it to the file descriptor
+				}
+			}
+			if(i == fileDescriptor.length)
+			{
+				Lib.debug(dbgProcess, "\thandleOpen: No more space in file descriptor");
+				return -1;
+			}
+		}
+		
+		return -1;
+	}
+	
+	/**
+	 * Handle the close() system call.
+	 */
+	private int handleClose(int file)
+	{
+		if(file<2 || file>15)
+		{
+			Lib.debug(dbgProcess, "\thandleClose: Trying to close a file that does not exist");
+			return -1;
+		}
+		
+		OpenFile theFile = fileDescriptor[file];
+		
+		if(theFile == null)
+		{
+			Lib.debug(dbgProcess, "\thandleClose: Trying to close a file that does not exist");
+			return -1;
+		}
+		else
+		{
+			theFile.close();
+			fileDescriptor[file] = null;
+			return file;
+		}
+	}
+	
+	/**
+	 * Handle the read() system call.
+	 */
+	private int handleRead(int file, int buffer, int count)
+	{
+		if(file<2 || file>15)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			return -1;
+		}
+		
+		OpenFile theFile = fileDescriptor[file];
+		
+		if(theFile == null)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			return -1;
+		}
+		
+		byte[] buff = new byte[count];
+		int readByte = theFile.read(buff, 0, count);
+		if(readByte == -1)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Failed to read file");
+			return -1;
+		}
+		
+		//write contents from buff to buffer
+		writeVirtualMemory(buffer, buff);
+		
+		//Apparently on "success" the file descriptor is "advanced" by the num of bytes read.. ??
+		return readByte; 
+	}
+	
+	/**
+	 * Handle the write() system call.
+	 */
+	private int handleWrite(int file, int buffer, int count)
+	{
+		if(file<2 || file>15)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			return -1;
+		}
+		
+		OpenFile theFile = fileDescriptor[file];
+		
+		if(theFile == null)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			return -1;
+		}
+		
+		byte[] buff = new byte[count];
+		
+		//Transfer the contents of buffer to buff
+		readVirtualMemory(buffer, buff);
+		
+		int writeByte = theFile.write(buff, 0, count);
+		
+		if(writeByte == -1)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Failed to read file");
+			return -1;
+		}
+		
+		//Apparently on "success" the file descriptor is "advanced" by the num of bytes read.. ??
+		return writeByte; 
+	}
+	
+	/**
+	 * Handle the unlink() system call.
+	 */
+	private int handleUnlink(int file) 
+	{
+		String filename = readVirtualMemoryString(file,256);
+		
+		if(filename == null)
+		{
+			Lib.debug(dbgProcess, "\thandleUnlink: Could not read filename from Virtual Memory");
+			return -1;
+		}
+		
+		fileDescriptor[file] = null;
+		ThreadedKernel.fileSystem.remove(filename);
+		
+		//FAILLLL NEED TO FIND OUT IF ANY PROCESS IS USING THIS EVEN! IF SOMEONE IS USING IT
+		//CANT DELETE IT YET UNTIL THE LAST REFERENCE TO IT IN FILE DESCRIPTOR IS CLOSED
+		//HOW TO KNOW WHO'S REFERENCING IT??? FAAAAACKK
+		
+		return 1;
+	}
+	
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
 			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
@@ -413,7 +622,18 @@ public class UserProcess {
 		switch (syscall) {
 		case syscallHalt:
 			return handleHalt();
-
+		case syscallCreate:
+    	    return handleCreate(a0);
+    	case syscallOpen:
+    	    return handleOpen(a0);
+        case syscallClose:
+            return handleClose(a0);
+        case syscallRead:
+            return handleRead(a0, a1, a2);
+        case syscallWrite:
+            return handleWrite(a0, a1, a2);
+        case syscallUnlink:
+        	return handleUnlink(a0);
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
 			Lib.assertNotReached("Unknown system call!");
@@ -468,4 +688,8 @@ public class UserProcess {
 	private static final int pageSize = Processor.pageSize;
 
 	private static final char dbgProcess = 'a';
+	
+	//Added variables
+	private OpenFile[] fileDescriptor = new OpenFile[16];
 }
+
