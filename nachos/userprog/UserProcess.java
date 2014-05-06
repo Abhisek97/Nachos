@@ -455,7 +455,7 @@ public class UserProcess {
 		{
 			theFile.close();
 			fileDescriptor[file] = null;
-			return file;
+			return 0;
 		}
 	}
 	
@@ -487,7 +487,10 @@ public class UserProcess {
 		}
 		
 		//write contents from buff to buffer
-		writeVirtualMemory(buffer, buff);
+		readByte = writeVirtualMemory(buffer, buff);
+		
+		if (readByte == 0)
+			return -1;
 		
 		//Apparently on "success" the file descriptor is "advanced" by the num of bytes read.. ??
 		return readByte; 
