@@ -26,6 +26,13 @@ public class UserKernel extends ThreadedKernel {
 
 		console = new SynchConsole(Machine.console());
 
+		//Initializing physical pages 
+		mutex = new Semaphore(1);
+		physicalPages = new LinkedList<Integer>();
+		
+		for (int i = 0; i < Machine.processor().getNumPhysPages(); i++)
+			physicalPages.add(i);
+		
 		Machine.processor().setExceptionHandler(new Runnable() {
 			public void run() {
 				exceptionHandler();
@@ -117,6 +124,7 @@ public class UserKernel extends ThreadedKernel {
 	private static Coff dummy1 = null;
 	
 	//Adding new variables for CSE120 Proj 2 Part II 
-	public static LinkedList<Integer> physicalPages = new LinkedList<Integer>();;
+	public static LinkedList<Integer> physicalPages;
 	
+	public static Semaphore mutex;
 }

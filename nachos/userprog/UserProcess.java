@@ -5,6 +5,7 @@ import nachos.threads.*;
 import nachos.userprog.*;
 
 import java.io.EOFException;
+import java.util.Hashtable;
 
 /**
  * Encapsulates the state of a user process that is not contained in its user
@@ -380,6 +381,10 @@ public class UserProcess {
 				if(fileDescriptor[i] == null)
 				{
 					fileDescriptor[i] = theFile;
+					openFilesMutex.P();
+					int numOpened = currentlyOpened.get(filename);
+					currentlyOpened.put(filename,numOpened++);
+					openFilesMutex.V();
 					return i;	//"Creating" the file by adding it to the file descriptor
 				}
 			}
@@ -425,6 +430,10 @@ public class UserProcess {
 				if(fileDescriptor[i] == null)
 				{
 					fileDescriptor[i] = theFile;
+					openFilesMutex.P();
+					int numOpened = currentlyOpened.get(filename);
+					currentlyOpened.put(filename,numOpened++);
+					openFilesMutex.V();
 					return i;	//"Creating" the file by adding it to the file descriptor
 				}
 			}
@@ -543,6 +552,7 @@ public class UserProcess {
 	private int handleUnlink(int file) 
 	{
 		String filename = readVirtualMemoryString(file,256);
+		int numOpened;
 		
 		if(filename == null)
 		{
@@ -551,13 +561,18 @@ public class UserProcess {
 		}
 		
 		fileDescriptor[file] = null;
-		ThreadedKernel.fileSystem.remove(filename);
 		
-		//FAILLLL NEED TO FIND OUT IF ANY PROCESS IS USING THIS EVEN! IF SOMEONE IS USING IT
-		//CANT DELETE IT YET UNTIL THE LAST REFERENCE TO IT IN FILE DESCRIPTOR IS CLOSED
-		//HOW TO KNOW WHO'S REFERENCING IT??? FAAAAACKK
+		openFilesMutex.P();
+		numOpened = currentlyOpened.get(filename);
+		openFilesMutex.V();
 		
-		return 1;
+		if(numOpened == 0)
+		{ 
+			ThreadedKernel.fileSystem.remove(filename);
+			return 0;
+		}
+		
+		return -1;
 	}
 	
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
@@ -698,6 +713,9 @@ public class UserProcess {
 	private static final char dbgProcess = 'a';
 	
 	//Added variables
-	private OpenFile[] fileDescriptor = new OpenFile[16];
+	private OpenFile[] fileDescriptor;
+	
+	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
+	private static Semaphore openFilesMutex = new Semaphore(1);
 }
 
