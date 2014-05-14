@@ -28,7 +28,8 @@ public class UserProcess {
 		int numPhysPages = Machine.processor().getNumPhysPages();
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
-			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+			pageTable[i] = new TranslationEntry(i, i, false, false, false, false);
+			//pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
 		
 		fileDescriptor = new OpenFile[16];
 		fileDescriptor[0] = UserKernel.console.openForReading();
@@ -291,6 +292,16 @@ public class UserProcess {
 			return false;
 		}
 
+		//Modification for Proj 2: Allocating pages for text section, stack, arguments
+		for (int i = 0; i < numPages; i++) {
+		    TranslationEntry entry = pageTable[i];
+		    UserKernel.physPageMutex.P();
+		    Integer pageNumber = UserKernel.physicalPages.removeFirst();
+		    UserKernel.physPageMutex.V();
+		    entry.ppn = pageNumber;
+		    entry.valid = true;
+		}
+		
 		// load sections
 		for (int s = 0; s < coff.getNumSections(); s++) {
 			CoffSection section = coff.getSection(s);
@@ -302,7 +313,19 @@ public class UserProcess {
 				int vpn = section.getFirstVPN() + i;
 
 				// for now, just assume virtual addresses=physical addresses
-				section.loadPage(i, vpn);
+				//section.loadPage(i, vpn);
+				
+				//Modification for Proj 2
+				TranslationEntry entry = pageTable[vpn];
+				
+				UserKernel.physPageMutex.P();
+				Integer thePage = UserKernel.physicalPages.removeFirst();
+				UserKernel.physPageMutex.V();
+				
+				entry.ppn = thePage;
+				entry.valid = true;
+				entry.readOnly = section.isReadOnly();
+				section.loadPage(i, entry.ppn);
 			}
 		}
 
@@ -313,6 +336,17 @@ public class UserProcess {
 	 * Release any resources allocated by <tt>loadSections()</tt>.
 	 */
 	protected void unloadSections() {
+		
+		for (int i = 0; i < pageTable.length; i++) {
+			
+		    TranslationEntry entry = pageTable[i];
+		    
+		    if (entry.valid) {
+		    	UserKernel.physPageMutex.P();
+		    	UserKernel.physicalPages.add(entry.ppn);
+		    	UserKernel.physPageMutex.V();
+		    }
+		}
 	}
 
 	/**
@@ -342,7 +376,14 @@ public class UserProcess {
 	 * Handle the halt() system call.
 	 */
 	private int handleHalt() {
-
+		
+		//Part III!!!!
+//		unloadSections();
+//		for (int i = 2; i < fileDescriptor.length; i++) {
+//		    if (fileDescriptor[i] != null)
+//			fileDescriptor[i].close();
+//		}
+		
 		Machine.halt();
 
 		Lib.assertNotReached("Machine.halt() did not halt machine!");

@@ -27,7 +27,7 @@ public class UserKernel extends ThreadedKernel {
 		console = new SynchConsole(Machine.console());
 
 		//Initializing physical pages 
-		mutex = new Semaphore(1);
+		physPageMutex = new Semaphore(1);
 		physicalPages = new LinkedList<Integer>();
 		
 		for (int i = 0; i < Machine.processor().getNumPhysPages(); i++)
@@ -126,5 +126,5 @@ public class UserKernel extends ThreadedKernel {
 	//Adding new variables for CSE120 Proj 2 Part II 
 	public static LinkedList<Integer> physicalPages;
 	
-	public static Semaphore mutex;
+	public static Semaphore physPageMutex;
 }
