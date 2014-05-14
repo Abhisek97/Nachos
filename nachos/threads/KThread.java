@@ -294,6 +294,12 @@ public class KThread {
 		
 		boolean status = Machine.interrupt().disable();
 		
+		if (this.status == statusFinished)
+		{
+			Machine.interrupt().restore(status);
+			return;
+		}
+		
 		threadToWait = currentThread;
 		threadToWait.sleep();
 		
@@ -411,17 +417,22 @@ public class KThread {
 		}
 
 		public void run() {
-			if (currentThread == bTestThread)
-				cTestThread.join();
-			else if (currentThread == cTestThread)
-				dTestThread.join();
+//			if (currentThread == bTestThread)
+//				cTestThread.join();
+//			else if (currentThread == cTestThread)
+//				dTestThread.join();
 //			else if (currentThread == dTestThread)
 //				mainTestThread.join();
-			
+			if (this.which == 0)
+			{
+				for (int i = 0; i < 100; i++)
+					currentThread.yield();
+				bTestThread.join();
+			}
 			for (int i = 0; i < 5; i++) {
 				System.out.println("*** thread " + which + " looped " + i
 						+ " times");
-				ThreadedKernel.alarm.waitUntil(2000);
+//				ThreadedKernel.alarm.waitUntil(2000);
 				currentThread.yield();
 			}
 		}
@@ -446,7 +457,7 @@ public class KThread {
 		KThread d = new KThread(new PingTest(3));
 		d.setName("forked thread").fork();
 		dTestThread = d;
-		b.join();
+//		b.join();
 		new PingTest(0).run();
 	}
 
