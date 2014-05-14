@@ -1,5 +1,7 @@
 package nachos.userprog;
 
+import java.util.LinkedList;
+
 import nachos.machine.*;
 import nachos.threads.*;
 import nachos.userprog.*;
@@ -113,4 +115,8 @@ public class UserKernel extends ThreadedKernel {
 
 	// dummy variables to make javac smarter
 	private static Coff dummy1 = null;
+	
+	//Adding new variables for CSE120 Proj 2 Part II 
+	public static LinkedList<Integer> physicalPages = new LinkedList<Integer>();;
+	
 }
