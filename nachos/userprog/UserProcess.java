@@ -478,9 +478,9 @@ public class UserProcess {
 	 */
 	private int handleRead(int file, int buffer, int count)
 	{
-		if(file<2 || file>15)
+		if(file<0 || file == 1 || file>15)
 		{
-			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist, fd out of range " + file);
 			return -1;
 		}
 		
@@ -488,7 +488,7 @@ public class UserProcess {
 		
 		if(theFile == null)
 		{
-			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist, file is null");
 			return -1;
 		}
 		
@@ -515,7 +515,7 @@ public class UserProcess {
 	 */
 	private int handleWrite(int file, int buffer, int count)
 	{
-		if(file<2 || file>15)
+		if(file<1 || file>15)
 		{
 			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
 			return -1;

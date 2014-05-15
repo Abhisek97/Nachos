@@ -18,6 +18,7 @@ public class ThreadedKernel extends Kernel {
 	 * alarm, and enables interrupts. Creates a file system if necessary.
 	 */
 	public void initialize(String[] args) {
+		
 		// set scheduler
 		String schedulerName = Config.getString("ThreadedKernel.scheduler");
 		scheduler = (Scheduler) Lib.constructObject(schedulerName);
@@ -49,7 +50,7 @@ public class ThreadedKernel extends Kernel {
 		KThread.selfTest();
 		Semaphore.selfTest();
 		SynchList.selfTest();
-		Communicator.selfTest();
+		Communicator.selfTest(); //
 		if (Machine.bank() != null) {
 			ElevatorBank.selfTest();
 		}

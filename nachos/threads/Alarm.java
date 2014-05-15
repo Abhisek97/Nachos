@@ -89,8 +89,9 @@ public class Alarm {
 				Machine.timer().getTime() + x);
 		pq.add(newKnapp);
 		
-		Machine.interrupt().disable();
+		boolean status = Machine.interrupt().disable();
 		KThread.currentThread().sleep();
+		Machine.interrupt().restore(status);
 	}
 	
 	private static PriorityQueue<KnappThread> pq;
