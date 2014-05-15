@@ -139,15 +139,21 @@ public class UserProcess {
 
 		byte[] memory = Machine.processor().getMemory();
 
-		int vpn = Processor.pageFromAddress(vaddr);
-		int vpnOffset = Processor.offsetFromAddress(vaddr);
-		
-		// for now, just assume that virtual addresses equal physical addresses
 		if (vaddr < 0 || vaddr >= memory.length)
 			return 0;
+		
+		int vpn = Processor.pageFromAddress(vaddr);
+		int vpnOffset = Processor.offsetFromAddress(vaddr);
+		TranslationEntry entry = pageTable[vpn];
+		entry.used = true;
+		int realAddr = entry.ppn*pageSize + vpnOffset;
+		
+		// for now, just assume that virtual addresses equal physical addresses
+		if (realAddr < 0 || realAddr >= memory.length || !entry.valid)
+			return 0;
 
-		int amount = Math.min(length, memory.length - vaddr);
-		System.arraycopy(memory, vaddr, data, offset, amount);
+		int amount = Math.min(length, memory.length - realAddr);
+		System.arraycopy(memory, realAddr, data, offset, amount);
 
 		return amount;
 	}
