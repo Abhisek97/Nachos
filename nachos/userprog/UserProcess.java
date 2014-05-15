@@ -153,10 +153,15 @@ public class UserProcess {
 		Lib.assertTrue(offset >= 0 && length >= 0
 				&& offset + length <= data.length);
 
+		// Not sure if we need to check if offset > pageSize
+		if (data == null || offset > pageSize)
+			return 0;
+		
 		byte[] memory = Machine.processor().getMemory();
 
 		if (vaddr < 0 || vaddr >= memory.length)
 			return 0;
+		
 		
 		int vpn = Processor.pageFromAddress(vaddr);
 		int vpnOffset = Processor.offsetFromAddress(vaddr);
@@ -167,11 +172,45 @@ public class UserProcess {
 		// for now, just assume that virtual addresses equal physical addresses
 		if (realAddr < 0 || realAddr >= memory.length || !entry.valid)
 			return 0;
-
-		int amount = Math.min(length, memory.length - realAddr);
-		System.arraycopy(memory, realAddr, data, offset, amount);
-
-		return amount;
+		
+		// keeps track of where we have written to data
+		int written = 0;
+		int currOffset = offset;
+		int currAddr = realAddr;
+		int leftToWrite = length;
+		int currVpn = vpn;
+		int currPpn = entry.ppn;
+		
+		while (written < length)
+		{
+			if (currOffset + leftToWrite > pageSize)
+			{
+				int amountToWrite = pageSize - currOffset;
+				System.arraycopy(memory, currAddr, data, written, amountToWrite);
+				written += amountToWrite;
+				leftToWrite = length - written;
+				if (++currVpn > pageTable.length)
+					break;
+				else
+				{
+					pageTable[currVpn - 1].used = false;
+					TranslationEntry currEntry = pageTable[currVpn];
+					if (!currEntry.valid)
+						break;
+					currEntry.used = true;
+					currOffset = 0;
+					currAddr = currPpn * pageSize;
+				}
+			}
+			else
+			{
+				System.arraycopy(memory, currAddr, data, written, leftToWrite);
+				written += leftToWrite; // written should now equal length
+			}
+			
+		}
+		pageTable[currVpn].used = false;
+		return written;
 	}
 
 	/**
@@ -705,7 +744,7 @@ public class UserProcess {
 	private int handleUnlink(int file) 
 	{
 		String filename = readVirtualMemoryString(file,256);
-		int numOpened;
+//		int numOpened;
 		
 		if(filename == null)
 		{
@@ -713,22 +752,27 @@ public class UserProcess {
 			return -1;
 		}
 		
+		// If the file is in the table, then close it before deleting
 		int indexInTable = isInFDTable(filename);
 		if (indexInTable != -1)
 		{
 			handleClose(indexInTable);
 		}
 		
-		openFilesMutex.P();
-		numOpened = currentlyOpened.get(filename);
-		openFilesMutex.V();
+//		openFilesMutex.P();
+//		numOpened = currentlyOpened.get(filename);
+//		openFilesMutex.V();
+//		
+//		if(numOpened == 0)
+//		{ 
+//			ThreadedKernel.fileSystem.remove(filename);
+//			return 0;
+//		}
 		
-		if(numOpened == 0)
-		{ 
-			ThreadedKernel.fileSystem.remove(filename);
+		if (ThreadedKernel.fileSystem.remove(filename))
 			return 0;
-		}
 		
+		// Should only get here if remove returned false
 		return -1;
 	}
 	
