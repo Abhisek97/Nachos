@@ -5,6 +5,7 @@ import nachos.threads.*;
 import nachos.userprog.*;
 
 import java.io.EOFException;
+import java.util.HashSet;
 import java.util.Hashtable;
 
 /**
@@ -42,6 +43,9 @@ public class UserProcess {
 			this.pID = UserKernel.processID++;
 		}
 		UserKernel.processIDMutex.V();
+		
+		//Initialize children hashset to keep track of all it's children
+		children = new HashSet<Integer>();
 		
 		fileDescriptor = new OpenFile[16];
 		fileDescriptor[0] = UserKernel.console.openForReading();
@@ -418,6 +422,67 @@ public class UserProcess {
 	/**
 	 * Handle the exit() system call.
 	 */
+	private int handleExec(int file, int argc, int argv) {
+		
+		//load the "program" to insert into the child process hither
+		String filename = null;
+		filename = readVirtualMemoryString(file,256);
+		
+		//Check arguments first
+		if(filename == null)
+		{
+			Lib.debug(dbgProcess, "\thandleExec: Could not read filename from Virtual Memory");
+			return -1;
+		}
+		if (argc < 0) {
+			Lib.debug(dbgProcess, "\thandleExec: argc < 0");
+			return -1;
+		}
+		
+		//Create string array to represent the "args"
+		String[] args = new String[argc];
+		
+		//The buffer to read virtual memory into
+		byte[] buffer = new byte[4];
+
+		//allocating program arguments to args[]
+		for (int i = 0; i < argc; i++) 
+		{
+            readVirtualMemory(argv+i*4, buffer);
+            
+			args[i] = readVirtualMemoryString(Lib.bytesToInt(buffer, 0),256);
+			
+			//fail
+			if (args[i] == null)
+			{
+				Lib.debug(dbgProcess, "\thandleExec: Error reading virtual memory");
+				return -1;
+			}
+		}
+		
+		//Create new child user process
+		UserProcess child = new UserProcess();
+		
+		//Keep track of parent's children
+		children.add(child.pID);
+		
+		//Child keeps track of it's parent
+		child.parentID = this.pID;
+		
+		//loading program into child
+		boolean insertProgram = child.execute(filename, args);
+		
+		//successful loading returns child pID to the parent process
+		if(insertProgram) {
+			return child.pID;
+		}
+		
+		return -1;
+	}
+	
+	/**
+	 * Handle the exit() system call.
+	 */
 	private int handleExit(int status) {
 	
 		unloadSections();
@@ -435,6 +500,7 @@ public class UserProcess {
 		UThread.finish();
 		return status;
 	}
+	
 	
 	/**
 	 * Handle the create() system call.
@@ -747,6 +813,10 @@ public class UserProcess {
 		switch (syscall) {
 		case syscallHalt:
 			return handleHalt();
+		case syscallExec:
+			return handleExec(a0, a1, a2);
+		case syscallExit:
+			return handleExit(a0);
 		case syscallCreate:
     	    return handleCreate(a0);
     	case syscallOpen:
@@ -823,5 +893,12 @@ public class UserProcess {
 	private static Semaphore openFilesMutex = new Semaphore(1);
 	
 	private int pID;
+	
+	private int parentID;
+	
+	private HashSet<Integer> children;
+
+	
+	
 }
 
