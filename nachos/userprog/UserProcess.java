@@ -44,9 +44,6 @@ public class UserProcess {
 		}
 		UserKernel.processIDMutex.V();
 		
-		//Initialize children hashset to keep track of all it's children
-		children = new HashSet<Integer>();
-		
 		fileDescriptor = new OpenFile[16];
 		fileDescriptor[0] = UserKernel.console.openForReading();
 		fileDescriptor[1] = UserKernel.console.openForWriting();
@@ -503,7 +500,7 @@ public class UserProcess {
 		UserProcess child = new UserProcess();
 		
 		//Keep track of parent's children
-		children.add(child.pID);
+		children.put(child.pID, child);
 		
 		//Child keeps track of it's parent
 		child.parentID = this.pID;
@@ -517,6 +514,24 @@ public class UserProcess {
 		}
 		
 		return -1;
+	}
+	
+	/**
+	 * Handle the join() system call.
+	 */
+	private int handleJoin(int processID, int status) {
+		
+		if(!children.contains(processID)) {
+			Lib.debug(dbgProcess, "\thandleJoin: Attempting to join a non-child process");
+			return -1;
+		}
+		
+		UserProcess joinThisChild = children.get(processID);
+		
+		if(joinThisChild == null) {
+			Lib.debug(dbgProcess, "\thandleJoin: Error getting child userprocess");
+			return -1;
+		}
 	}
 	
 	/**
@@ -940,7 +955,13 @@ public class UserProcess {
 	
 	private int parentID;
 	
-	private HashSet<Integer> children;
+	private Hashtable<Integer,UserProcess> children = new Hashtable<Integer, UserProcess>();
+	
+	private int exitStatus;
+	
+	//Semaphore the parent uses to call join on it's children. 
+	//Assuming you can only join one child at a time?
+	private Semaphore joinMutex = new Semaphore(1);
 
 	
 	
