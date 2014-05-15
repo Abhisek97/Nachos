@@ -40,7 +40,7 @@ public class UserProcess {
 			this.pID = 0;
 		}
 		else {
-			this.pID = UserKernel.processID++;
+			this.pID = ++UserKernel.processID;
 		}
 		UserKernel.processIDMutex.V();
 		
@@ -532,6 +532,8 @@ public class UserProcess {
 			Lib.debug(dbgProcess, "\thandleJoin: Error getting child userprocess");
 			return -1;
 		}
+		
+		return 0; //abnormally? lolz
 	}
 	
 	/**
