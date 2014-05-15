@@ -31,6 +31,18 @@ public class UserProcess {
 			pageTable[i] = new TranslationEntry(i, i, false, false, false, false);
 			//pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
 		
+		/* Initialize Process ID */
+		
+		//If its the root process
+		UserKernel.processIDMutex.P();
+		if(this == UserKernel.root) {
+			this.pID = 0;
+		}
+		else {
+			this.pID = UserKernel.processID++;
+		}
+		UserKernel.processIDMutex.V();
+		
 		fileDescriptor = new OpenFile[16];
 		fileDescriptor[0] = UserKernel.console.openForReading();
 		fileDescriptor[1] = UserKernel.console.openForWriting();
@@ -387,16 +399,41 @@ public class UserProcess {
 	private int handleHalt() {
 		
 		//Part III!!!!
-//		unloadSections();
-//		for (int i = 2; i < fileDescriptor.length; i++) {
-//		    if (fileDescriptor[i] != null)
-//			fileDescriptor[i].close();
-//		}
+		if (this != UserKernel.root)
+			return 0;
+		
+		//need this chunk?
+		unloadSections();
+		for (int i = 2; i < fileDescriptor.length; i++) {
+		    if (fileDescriptor[i] != null)
+			fileDescriptor[i].close();
+		}
 		
 		Machine.halt();
 
 		Lib.assertNotReached("Machine.halt() did not halt machine!");
 		return 0;
+	}
+	
+	/**
+	 * Handle the exit() system call.
+	 */
+	private int handleExit(int status) {
+	
+		unloadSections();
+		for (int i = 2; i < fileDescriptor.length; i++) {
+		    if (fileDescriptor[i] != null)
+			fileDescriptor[i].close();
+		}
+		
+		//Still need to return status to parent somehow or set parent pointer to none
+		
+		if(pID==0) {
+			Machine.halt();
+		}
+		
+		UThread.finish();
+		return status;
 	}
 	
 	/**
@@ -784,5 +821,7 @@ public class UserProcess {
 	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
 	
 	private static Semaphore openFilesMutex = new Semaphore(1);
+	
+	private int pID;
 }
 

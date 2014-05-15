@@ -30,6 +30,9 @@ public class UserKernel extends ThreadedKernel {
 		physPageMutex = new Semaphore(1);
 		physicalPages = new LinkedList<Integer>();
 		
+		processIDMutex = new Semaphore(1);
+		processID = 0;
+		
 		for (int i = 0; i < Machine.processor().getNumPhysPages(); i++)
 			physicalPages.add(i);
 		
@@ -103,6 +106,8 @@ public class UserKernel extends ThreadedKernel {
 		super.run();
 
 		UserProcess process = UserProcess.newUserProcess();
+		root = process;
+		
 
 		String shellProgram = Machine.getShellProgramName();
 		Lib.assertTrue(process.execute(shellProgram, new String[] {}));
@@ -127,4 +132,11 @@ public class UserKernel extends ThreadedKernel {
 	public static LinkedList<Integer> physicalPages;
 	
 	public static Semaphore physPageMutex;
+	
+	public static Semaphore processIDMutex;
+	
+	public static int processID;
+	
+	//References the root process
+	public static UserProcess root = null;
 }
