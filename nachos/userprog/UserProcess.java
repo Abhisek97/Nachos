@@ -139,6 +139,9 @@ public class UserProcess {
 
 		byte[] memory = Machine.processor().getMemory();
 
+		int vpn = Processor.pageFromAddress(vaddr);
+		int vpnOffset = Processor.offsetFromAddress(vaddr);
+		
 		// for now, just assume that virtual addresses equal physical addresses
 		if (vaddr < 0 || vaddr >= memory.length)
 			return 0;
