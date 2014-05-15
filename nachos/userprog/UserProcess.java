@@ -601,7 +601,11 @@ public class UserProcess {
 			return -1;
 		}
 		
-		fileDescriptor[file] = null;
+		int indexInTable = isInFDTable(filename);
+		if (indexInTable != -1)
+		{
+			handleClose(indexInTable);
+		}
 		
 		openFilesMutex.P();
 		numOpened = currentlyOpened.get(filename);
@@ -613,6 +617,17 @@ public class UserProcess {
 			return 0;
 		}
 		
+		return -1;
+	}
+	
+	private int isInFDTable(String filename)
+	{
+		for (int i = 0; i < fileDescriptor.length; i++)
+		{
+			OpenFile currFile = fileDescriptor[i];
+			if (currFile != null && filename == currFile.getName())
+				return i;
+		}
 		return -1;
 	}
 	
@@ -756,7 +771,9 @@ public class UserProcess {
 	//Added variables
 	private OpenFile[] fileDescriptor;
 	
+	// TODO: possibly get rid of currentlyOpened if it is no longer useful
 	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
+	
 	private static Semaphore openFilesMutex = new Semaphore(1);
 }
 
