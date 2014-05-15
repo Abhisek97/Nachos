@@ -596,7 +596,7 @@ public class UserProcess {
 	private int handleUnlink(int file) 
 	{
 		String filename = readVirtualMemoryString(file,256);
-		int numOpened;
+//		int numOpened;
 		
 		if(filename == null)
 		{
@@ -604,22 +604,27 @@ public class UserProcess {
 			return -1;
 		}
 		
+		// If the file is in the table, then close it before deleting
 		int indexInTable = isInFDTable(filename);
 		if (indexInTable != -1)
 		{
 			handleClose(indexInTable);
 		}
 		
-		openFilesMutex.P();
-		numOpened = currentlyOpened.get(filename);
-		openFilesMutex.V();
+//		openFilesMutex.P();
+//		numOpened = currentlyOpened.get(filename);
+//		openFilesMutex.V();
+//		
+//		if(numOpened == 0)
+//		{ 
+//			ThreadedKernel.fileSystem.remove(filename);
+//			return 0;
+//		}
 		
-		if(numOpened == 0)
-		{ 
-			ThreadedKernel.fileSystem.remove(filename);
+		if (ThreadedKernel.fileSystem.remove(filename))
 			return 0;
-		}
 		
+		// Should only get here if remove returned false
 		return -1;
 	}
 	
