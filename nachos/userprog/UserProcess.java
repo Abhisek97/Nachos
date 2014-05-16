@@ -484,7 +484,7 @@ public class UserProcess {
 		//allocating program arguments to args[]
 		for (int i = 0; i < argc; i++) 
 		{
-            readVirtualMemory(argv+i*4, buffer);
+			Lib.assertTrue(readVirtualMemory(argv+i*4, buffer) == buffer.length);
             
 			args[i] = readVirtualMemoryString(Lib.bytesToInt(buffer, 0),256);
 			
