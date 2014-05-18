@@ -25,13 +25,18 @@ public class UserKernel extends ThreadedKernel {
 		super.initialize(args);
 
 		console = new SynchConsole(Machine.console());
-
-		//Initializing physical pages 
+		
+		// Keep track of number of processes
+		processCount = 0;
+		pCountMutex = new Semaphore(1);
+		
+		// Initializing physical pages 
 		physPageMutex = new Semaphore(1);
 		physicalPages = new LinkedList<Integer>();
 		
 		processIDMutex = new Semaphore(1);
 		processID = 0;
+		
 		
 		for (int i = 0; i < Machine.processor().getNumPhysPages(); i++)
 			physicalPages.add(i);
@@ -136,6 +141,9 @@ public class UserKernel extends ThreadedKernel {
 	public static Semaphore processIDMutex;
 	
 	public static int processID;
+	
+	public static int processCount;
+	public static Semaphore pCountMutex;
 	
 	//References the root process
 	public static UserProcess root = null;

@@ -47,6 +47,10 @@ public class UserProcess {
 		fileDescriptor = new OpenFile[16];
 		fileDescriptor[0] = UserKernel.console.openForReading();
 		fileDescriptor[1] = UserKernel.console.openForWriting();
+		
+		statusLock = new Lock();
+		joinCond = new Condition(statusLock);
+		exitStatus = null;
 	}
 
 	/**
@@ -150,8 +154,7 @@ public class UserProcess {
 		Lib.assertTrue(offset >= 0 && length >= 0
 				&& offset + length <= data.length);
 
-		// Not sure if we need to check if offset > pageSize
-		if (data == null || offset > pageSize)
+		if (data == null)
 			return 0;
 		
 		byte[] memory = Machine.processor().getMemory();
@@ -168,11 +171,15 @@ public class UserProcess {
 		
 		// for now, just assume that virtual addresses equal physical addresses
 		if (realAddr < 0 || realAddr >= memory.length || !entry.valid)
+		{
+			entry.used = true;
 			return 0;
+		}
 		
-		// keeps track of where we have written to data
+		// keeps track of what's written to data
 		int written = 0;
-		int currOffset = offset;
+		int bufOffset = offset;
+		int pageOffset = vpnOffset;
 		int currAddr = realAddr;
 		int leftToWrite = length;
 		int currVpn = vpn;
@@ -180,13 +187,14 @@ public class UserProcess {
 		
 		while (written < length)
 		{
-			if (currOffset + leftToWrite > pageSize)
+			if (pageOffset + leftToWrite > pageSize)
 			{
-				int amountToWrite = pageSize - currOffset;
-				System.arraycopy(memory, currAddr, data, written, amountToWrite);
+				int amountToWrite = pageSize - pageOffset;
+				System.arraycopy(memory, currAddr, data, bufOffset, amountToWrite);
 				written += amountToWrite;
+				bufOffset += amountToWrite;
 				leftToWrite = length - written;
-				if (++currVpn > pageTable.length)
+				if (++currVpn >= pageTable.length)
 					break;
 				else
 				{
@@ -194,15 +202,17 @@ public class UserProcess {
 					TranslationEntry currEntry = pageTable[currVpn];
 					if (!currEntry.valid)
 						break;
+					
 					currEntry.used = true;
-					currOffset = 0;
+					pageOffset = 0;
 					currAddr = currPpn * pageSize;
 				}
 			}
 			else
 			{
-				System.arraycopy(memory, currAddr, data, written, leftToWrite);
+				System.arraycopy(memory, currAddr, data, bufOffset, leftToWrite);
 				written += leftToWrite; // written should now equal length
+				bufOffset += leftToWrite;
 			}
 			
 		}
@@ -240,16 +250,77 @@ public class UserProcess {
 		Lib.assertTrue(offset >= 0 && length >= 0
 				&& offset + length <= data.length);
 
+		if (data == null)
+			return 0;
+		
 		byte[] memory = Machine.processor().getMemory();
 
-		// for now, just assume that virtual addresses equal physical addresses
 		if (vaddr < 0 || vaddr >= memory.length)
 			return 0;
-
-		int amount = Math.min(length, memory.length - vaddr);
-		System.arraycopy(data, offset, memory, vaddr, amount);
-
-		return amount;
+		
+		
+		int vpn = Processor.pageFromAddress(vaddr);
+		int vpnOffset = Processor.offsetFromAddress(vaddr);
+		TranslationEntry entry = pageTable[vpn];
+		
+		// Make sure the section is not read only
+		if (entry.readOnly)
+			return 0;
+		
+		entry.used = true;
+		int realAddr = entry.ppn*pageSize + vpnOffset;
+		
+		// for now, just assume that virtual addresses equal physical addresses
+		if (realAddr < 0 || realAddr >= memory.length || !entry.valid)
+		{
+			entry.used = true;
+			return 0;
+		}
+		
+		// keeps track of what's written to data
+		int written = 0;
+		int bufOffset = offset;
+		int pageOffset = vpnOffset;
+		int currAddr = realAddr;
+		int leftToWrite = length;
+		int currVpn = vpn;
+		int currPpn = entry.ppn;
+		
+		while (written < length)
+		{
+			if (pageOffset + leftToWrite > pageSize)
+			{
+				int amountToWrite = pageSize - pageOffset;
+				System.arraycopy(data, bufOffset, memory, currAddr, amountToWrite);
+				written += amountToWrite;
+				bufOffset += amountToWrite;
+				leftToWrite = length - written;
+				if (++currVpn >= pageTable.length)
+					break;
+				else
+				{
+					pageTable[currVpn - 1].used = false;
+					TranslationEntry currEntry = pageTable[currVpn];
+					
+					// Make sure the next page is also not read only
+					if (!currEntry.valid || currEntry.readOnly)
+						break;
+					
+					currEntry.used = true;
+					pageOffset = 0;
+					currAddr = currPpn * pageSize;
+				}
+			}
+			else
+			{
+				System.arraycopy(data, bufOffset, memory, currAddr, leftToWrite);
+				written += leftToWrite; // written should now equal length
+				bufOffset += leftToWrite;
+			}
+			
+		}
+		pageTable[currVpn].used = false;
+		return written;
 	}
 
 	/**
@@ -336,6 +407,9 @@ public class UserProcess {
 			stringOffset += 1;
 		}
 
+		
+		incProcessCount();
+		
 		return true;
 	}
 
@@ -353,11 +427,27 @@ public class UserProcess {
 			return false;
 		}
 
-		//Modification for Proj 2: Allocating pages for text section, stack, arguments
+		// Modification for Proj 2: Allocating pages for text section, stack, arguments
+		// TODO: May need to allocate Stack pages at the end of the pageTable
+		//       from high to low memory.
 		for (int i = 0; i < numPages; i++) {
 		    TranslationEntry entry = pageTable[i];
 		    UserKernel.physPageMutex.P();
 		    Integer pageNumber = UserKernel.physicalPages.removeFirst();
+		    if (pageNumber == null)
+		    {
+		    	// Not enough physical memory left, so give the pages back
+		    	// to the processor and return false
+		    	for (int j = 0; j < i; j++)
+		    	{
+		    		TranslationEntry entry2 = pageTable[j];
+				    UserKernel.physPageMutex.P();
+				    UserKernel.physicalPages.add(entry2.ppn);
+				    UserKernel.physPageMutex.V();
+				    entry2.valid = false;
+		    	}
+		    	return false;
+		    }
 		    UserKernel.physPageMutex.V();
 		    entry.ppn = pageNumber;
 		    entry.valid = true;
@@ -491,19 +581,20 @@ public class UserProcess {
 			//fail
 			if (args[i] == null)
 			{
-				Lib.debug(dbgProcess, "\thandleExec: Error reading virtual memory");
+				Lib.debug(dbgProcess, "\thandleExec: Error reading arg "
+						+ i + " from virtual memory");
 				return -1;
 			}
 		}
 		
 		//Create new child user process
-		UserProcess child = new UserProcess();
+		UserProcess child = newUserProcess();
 		
 		//Keep track of parent's children
 		children.put(child.pID, child);
 		
 		//Child keeps track of it's parent
-		child.parentID = this.pID;
+		child.parent = this;
 		
 		//loading program into child
 		boolean insertProgram = child.execute(filename, args);
@@ -522,18 +613,37 @@ public class UserProcess {
 	private int handleJoin(int processID, int status) {
 		
 		if(!children.contains(processID)) {
-			Lib.debug(dbgProcess, "\thandleJoin: Attempting to join a non-child process");
+			Lib.debug(dbgProcess, "\thandleJoin: Attempting to join a non-child process or"
+					+ " this is child this parent has already joined");
 			return -1;
 		}
 		
-		UserProcess joinThisChild = children.get(processID);
+		statusLock.acquire();
 		
-		if(joinThisChild == null) {
-			Lib.debug(dbgProcess, "\thandleJoin: Error getting child userprocess");
-			return -1;
+		// Lock should appropriately handle synchronization of child's status
+		Integer childStatus = children.get(processID).exitStatus;
+		if (childStatus == null)
+		{
+			joinCond.sleep();
+			// Status better be in the table now
+			childStatus = children.get(processID).exitStatus;
 		}
+		Lib.assertTrue(childStatus != null);
 		
-		return 0; //abnormally? lolz
+		// Child should no longer be joinable as in syscall.h
+		children.remove(processID);
+		
+		statusLock.release();
+			
+		// Write the status to the memory address given
+		byte[] statusAry = Lib.bytesFromInt(childStatus.intValue());
+		writeVirtualMemory(status, statusAry);
+		
+		if (childStatus.intValue() == 0)
+			return 1;
+		else
+			return 0;
+		
 	}
 	
 	/**
@@ -547,11 +657,15 @@ public class UserProcess {
 			fileDescriptor[i].close();
 		}
 		
-		//Still need to return status to parent somehow or set parent pointer to none
+		// TODO: Still need to return status to parent somehow or set parent pointer to none
+		statusLock.acquire();
+		exitStatus = status;
+		if (parent != null)
+			parent.joinCond.notifyAll();
+		statusLock.release();
 		
-		if(pID==0) {
-			Machine.halt();
-		}
+		// Handles calling terminate when this is the last process
+		decProcessCount();
 		
 		UThread.finish();
 		return status;
@@ -661,9 +775,11 @@ public class UserProcess {
 	 */
 	private int handleClose(int file)
 	{
-		if(file<2 || file>15)
+		// Can close FD 0 and 1
+		if(file<0 || file>15)
 		{
-			Lib.debug(dbgProcess, "\thandleClose: Trying to close a file that does not exist");
+			Lib.debug(dbgProcess, "\thandleClose: Trying to close the file descriptor "
+					+ file + " which is outside the range");
 			return -1;
 		}
 		
@@ -724,9 +840,14 @@ public class UserProcess {
 	 */
 	private int handleWrite(int file, int buffer, int count)
 	{
+		if (file == 0)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Trying to write to stdin");
+			return -1;
+		}
 		if(file<1 || file>15)
 		{
-			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			Lib.debug(dbgProcess, "\thandleRead: Trying to write to a file that does not exist");
 			return -1;
 		}
 		
@@ -734,7 +855,7 @@ public class UserProcess {
 		
 		if(theFile == null)
 		{
-			Lib.debug(dbgProcess, "\thandleRead: Trying to read a file that does not exist");
+			Lib.debug(dbgProcess, "\thandleRead: Trying to write to a file that does not exist");
 			return -1;
 		}
 		
@@ -751,7 +872,8 @@ public class UserProcess {
 			return -1;
 		}
 		
-		//Apparently on "success" the file descriptor is "advanced" by the num of bytes read.. ??
+		// Apparently on "success" the file descriptor is "advanced" by the num of bytes read
+		// This is handled by the OpenFile's write method
 		return writeByte; 
 	}
 	
@@ -776,15 +898,6 @@ public class UserProcess {
 			handleClose(indexInTable);
 		}
 		
-//		openFilesMutex.P();
-//		numOpened = currentlyOpened.get(filename);
-//		openFilesMutex.V();
-//		
-//		if(numOpened == 0)
-//		{ 
-//			ThreadedKernel.fileSystem.remove(filename);
-//			return 0;
-//		}
 		
 		if (ThreadedKernel.fileSystem.remove(filename))
 			return 0;
@@ -876,6 +989,8 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExec:
 			return handleExec(a0, a1, a2);
+		case syscallJoin:
+			return handleJoin(a0, a1);
 		case syscallExit:
 			return handleExit(a0);
 		case syscallCreate:
@@ -907,6 +1022,9 @@ public class UserProcess {
 	public void handleException(int cause) {
 		Processor processor = Machine.processor();
 
+		// TODO: Handle the unexpected exception case to kill the process
+		//       and appropriately let the parent know how the child exited
+		
 		switch (cause) {
 		case Processor.exceptionSyscall:
 			int result = handleSyscall(processor.readRegister(Processor.regV0),
@@ -923,6 +1041,26 @@ public class UserProcess {
 					+ Processor.exceptionNames[cause]);
 			Lib.assertNotReached("Unexpected exception");
 		}
+	}
+	
+	public void incProcessCount()
+	{
+		UserKernel.pCountMutex.P();
+		
+		UserKernel.processCount++;
+		
+		UserKernel.pCountMutex.V();
+	}
+	
+	public void decProcessCount()
+	{
+		UserKernel.pCountMutex.P();
+		
+		// If the last process then terminate the system
+		if (--UserKernel.processCount == 0)
+			Kernel.kernel.terminate();
+		
+		UserKernel.pCountMutex.V();
 	}
 
 	/** The program being run by this process. */
@@ -955,15 +1093,15 @@ public class UserProcess {
 	
 	private int pID;
 	
-	private int parentID;
-	
+	private UserProcess parent;
+		
 	private Hashtable<Integer,UserProcess> children = new Hashtable<Integer, UserProcess>();
 	
-	private int exitStatus;
+	private Integer exitStatus;
 	
-	//Semaphore the parent uses to call join on it's children. 
-	//Assuming you can only join one child at a time?
-	private Semaphore joinMutex = new Semaphore(1);
+	// Used to join a child
+	private Lock statusLock;
+	private Condition joinCond;
 
 	
 	
