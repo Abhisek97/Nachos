@@ -663,9 +663,15 @@ public class UserProcess {
 		// TODO: Still need to return status to parent somehow or set parent pointer to none
 		statusLock.acquire();
 		exitStatus = status;
-		if (parent != null)
-			parent.joinCond.notifyAll();
 		statusLock.release();
+		
+		if (parent != null)
+		{
+			parent.statusLock.acquire();
+			parent.joinCond.notifyAll();
+			parent.statusLock.release();
+
+		}
 		
 		// Set each of the children's parent reference to null to mee the condition
 		// "Any children of the process no longer have a parent process"
@@ -714,10 +720,6 @@ public class UserProcess {
 				if(fileDescriptor[i] == null)
 				{
 					fileDescriptor[i] = theFile;
-					openFilesMutex.P();
-					int numOpened = currentlyOpened.get(filename);
-					currentlyOpened.put(filename,numOpened++);
-					openFilesMutex.V();
 					return i;	//"Creating" the file by adding it to the file descriptor
 				}
 			}
@@ -763,11 +765,7 @@ public class UserProcess {
 				if(fileDescriptor[i] == null)
 				{
 					fileDescriptor[i] = theFile;
-					openFilesMutex.P();
-					int numOpened = currentlyOpened.get(filename);
-					currentlyOpened.put(filename,numOpened++);
-					openFilesMutex.V();
-					return i;	//"Creating" the file by adding it to the file descriptor
+					return i;	//"Opening" the file by adding it to the file descriptor
 				}
 			}
 			if(i == fileDescriptor.length)
@@ -836,9 +834,9 @@ public class UserProcess {
 		}
 		
 		//write contents from buff to buffer
-		readByte = writeVirtualMemory(buffer, buff);
+		readByte = writeVirtualMemory(buffer, buff, 0, readByte);
 		
-		if (readByte == 0)
+		if (readByte == -1)
 			return -1;
 		
 		//Apparently on "success" the file descriptor is "advanced" by the num of bytes read.. ??
@@ -872,13 +870,16 @@ public class UserProcess {
 		byte[] buff = new byte[count];
 		
 		//Transfer the contents of buffer to buff
-		readVirtualMemory(buffer, buff);
+		int readBytes = readVirtualMemory(buffer, buff);
 		
 		int writeByte = theFile.write(buff, 0, count);
 		
+		if (readBytes != writeByte)
+			Lib.debug(dbgProcess, "\tIn handleWrite and not all bytes written");
+		
 		if(writeByte == -1)
 		{
-			Lib.debug(dbgProcess, "\thandleRead: Failed to read file");
+			Lib.debug(dbgProcess, "\thandleWrite: Failed to write to file");
 			return -1;
 		}
 		
@@ -1100,9 +1101,9 @@ public class UserProcess {
 	private OpenFile[] fileDescriptor;
 	
 	// TODO: possibly get rid of currentlyOpened if it is no longer useful
-	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
+//	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
 	
-	private static Semaphore openFilesMutex = new Semaphore(1);
+//	private static Semaphore openFilesMutex = new Semaphore(1);
 	
 	private int pID;
 	
