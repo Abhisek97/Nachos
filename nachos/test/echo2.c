@@ -6,8 +6,9 @@ int main(int argc, char** argv)
   int i;
 
   printf("%d arguments\n", argc);
-  printf("argc address: %X\n", &argc);
-  printf("argv address: %X\n", &argv);
+  printf("argc address: %d\n", &argc);
+  printf("argv address: %d\n", &argv);
+  printf("local var i address: %d\n", &i);
   
   for (i=0; i<argc; i++)
     printf("arg %d: %s\n", i, argv[i]);
