@@ -618,10 +618,13 @@ public class UserProcess {
 			return -1;
 		}
 		
-		statusLock.acquire();
+		UserProcess child = children.get(processID);
+		
+		// Acquire child's lock so we can look at it
+		child.statusLock.acquire();
 		
 		// Lock should appropriately handle synchronization of child's status
-		Integer childStatus = children.get(processID).exitStatus;
+		Integer childStatus = child.exitStatus;
 		if (childStatus == null)
 		{
 			joinCond.sleep();
@@ -663,6 +666,13 @@ public class UserProcess {
 		if (parent != null)
 			parent.joinCond.notifyAll();
 		statusLock.release();
+		
+		// Set each of the children's parent reference to null to mee the condition
+		// "Any children of the process no longer have a parent process"
+		for (UserProcess up : children.values())
+		{
+			up.parent = null;
+		}
 		
 		// Handles calling terminate when this is the last process
 		decProcessCount();
@@ -1039,7 +1049,10 @@ public class UserProcess {
 		default:
 			Lib.debug(dbgProcess, "Unexpected exception: "
 					+ Processor.exceptionNames[cause]);
-			Lib.assertNotReached("Unexpected exception");
+//			Lib.assertNotReached("Unexpected exception");
+			
+			// Exit with a non-zero value which will be cause
+			handleExit(cause);
 		}
 	}
 	
