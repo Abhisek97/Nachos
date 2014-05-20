@@ -36,12 +36,13 @@ public class UserProcess {
 		
 		//If its the root process
 		UserKernel.processIDMutex.P();
-		if(this == UserKernel.root) {
-			this.pID = 0;
-		}
-		else {
-			this.pID = ++UserKernel.processID;
-		}
+//		if(this == UserKernel.root) {
+//			this.pID = 0;
+//		}
+//		else {
+//			this.pID = ++UserKernel.processID;
+//		}
+		this.pID = UserKernel.processID++;
 		UserKernel.processIDMutex.V();
 		
 		fileDescriptor = new OpenFile[16];
