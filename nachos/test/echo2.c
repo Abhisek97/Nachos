@@ -14,12 +14,12 @@ int main(int argc, char** argv)
   printf("address of fmt: %d\n", &fmt);
   printf("address stored in fmt: %d\n", fmt);
   if (argc > 0) {
-    printf("address stored in argv[0]: %dn", argv);
-    printf("string in argv[0]: %sn", argv[0]);
+    printf("address stored in argv[0]: %d\n", argv);
+    printf("string in argv[0]: %s\n", argv[0]);
   }
   if (argc > 1) {
-    printf("address stored in argv[1]: %dn", argv+1);
-    printf("string in argv[1]: %sn", argv[1]);
+    printf("address stored in argv[1]: %d\n", argv+1);
+    printf("string in argv[1]: %s\n", argv[1]);
   }
   
   for (i=0; i<argc; i++)
