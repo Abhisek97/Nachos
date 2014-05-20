@@ -855,8 +855,39 @@ public class UserProcess {
 		}
 		
 		// TODO: Only write up to a pages amount and do multiple writes if need be
-		byte[] buff = new byte[count];
-		int readByte = theFile.read(buff, 0, count);
+		byte[] buff = new byte[pageSize];
+		int leftToRead = count;
+		int totalRead = 0;
+		int readByte = 0;
+		while (leftToRead > pageSize)
+		{
+			readByte = theFile.read(buff, 0, pageSize);
+			if(readByte == -1)
+			{
+				Lib.debug(dbgProcess, "\thandleRead: Failed to read file");
+				return -1;
+			}
+			else if (readByte == 0)
+			{
+				return totalRead;
+			}
+			
+			//write contents from buff to buffer
+			int readByte2 = writeVirtualMemory(buffer, buff, 0, readByte);
+			
+			if (readByte != readByte2)
+			{
+				Lib.debug(dbgProcess, "\thandleRead: Read and write amounts did not match");
+				return -1;
+			}
+			
+			buffer += readByte2;
+			totalRead += readByte2;
+			leftToRead -= readByte2;
+		}
+		
+		// The stuff left to write is less that pageSize now
+		readByte = theFile.read(buff, 0, leftToRead);
 		if(readByte == -1)
 		{
 			Lib.debug(dbgProcess, "\thandleRead: Failed to read file");
@@ -864,13 +895,17 @@ public class UserProcess {
 		}
 		
 		//write contents from buff to buffer
-		readByte = writeVirtualMemory(buffer, buff, 0, readByte);
+		int readByte2 = writeVirtualMemory(buffer, buff, 0, readByte);
 		
-		if (readByte == -1)
+		if (readByte != readByte2)
+		{
+			Lib.debug(dbgProcess, "\thandleRead: Read and write amounts did not match");
 			return -1;
+		}
 		
-		//Apparently on "success" the file descriptor is "advanced" by the num of bytes read.. ??
-		return readByte; 
+		totalRead += readByte2;
+		
+		return totalRead; 
 	}
 	
 	/**
@@ -897,27 +932,59 @@ public class UserProcess {
 			return -1;
 		}
 		
-		byte[] buff = new byte[count];
 		
-		//Transfer the contents of buffer to buff
-		int readBytes = readVirtualMemory(buffer, buff);
 		
-		int writeByte = theFile.write(buff, 0, count);
 		
-		if (readBytes != writeByte)
+		// TODO: Only write up to a pages amount and do multiple writes if need be
+		byte[] buff = new byte[pageSize];
+		int leftToWrite = count;
+		int totalWrote = 0;
+		int wroteByte = 0;
+		while (leftToWrite > pageSize)
+		{
+			wroteByte = readVirtualMemory(buffer, buff);
+			
+			int wroteByte2 = theFile.write(buff, 0, wroteByte);
+			
+			if (wroteByte != wroteByte2)
+			{
+				Lib.debug(dbgProcess, "\tIn handleWrite and not all bytes written");
+			}
+			
+			if(wroteByte2 == -1)
+			{
+				Lib.debug(dbgProcess, "\thandleWrite: Failed to write to file");
+				return -1;
+			}
+			else if (wroteByte2 == 0)
+			{
+				return totalWrote;
+			}
+			
+			buffer += wroteByte2;
+			totalWrote += wroteByte2;
+			leftToWrite -= wroteByte2;
+		}
+		
+		// The stuff left to write is less that pageSize now
+		wroteByte = readVirtualMemory(buffer, buff, 0, leftToWrite);
+		
+		int wroteByte2 = theFile.write(buff, 0, wroteByte);
+		
+		if (wroteByte != wroteByte2)
 		{
 			Lib.debug(dbgProcess, "\tIn handleWrite and not all bytes written");
 		}
 		
-		if(writeByte == -1)
+		if(wroteByte2 == -1)
 		{
 			Lib.debug(dbgProcess, "\thandleWrite: Failed to write to file");
 			return -1;
 		}
 		
-		// Apparently on "success" the file descriptor is "advanced" by the num of bytes read
-		// This is handled by the OpenFile's write method
-		return writeByte; 
+		totalWrote += wroteByte2;
+		
+		return totalWrote;
 	}
 	
 	/**
