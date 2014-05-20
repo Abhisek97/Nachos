@@ -626,18 +626,24 @@ public class UserProcess {
 		
 		// Lock should appropriately handle synchronization of child's status
 		Integer childStatus = child.exitStatus;
+		child.statusLock.release();
+
 		if (childStatus == null)
 		{
+			statusLock.acquire();
 			joinCond.sleep();
+			statusLock.release();
+			
+			child.statusLock.acquire();
 			// Status better be in the table now
-			childStatus = children.get(processID).exitStatus;
+			childStatus = child.exitStatus;
+			child.statusLock.release();
 		}
 		Lib.assertTrue(childStatus != null);
 		
 		// Child should no longer be joinable as in syscall.h
 		children.remove(processID);
 		
-		statusLock.release();
 			
 		// Write the status to the memory address given
 		byte[] statusAry = Lib.bytesFromInt(childStatus.intValue());
