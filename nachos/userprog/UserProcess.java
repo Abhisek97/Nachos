@@ -408,6 +408,7 @@ public class UserProcess {
 			stringOffset += 1;
 		}
 
+//		byte[] mem = Machine.processor().getMemory();
 		
 		incProcessCount();
 		
@@ -832,6 +833,7 @@ public class UserProcess {
 			return -1;
 		}
 		
+		// TODO: Only write up to a pages amount and do multiple writes if need be
 		byte[] buff = new byte[count];
 		int readByte = theFile.read(buff, 0, count);
 		if(readByte == -1)
@@ -1123,6 +1125,8 @@ public class UserProcess {
 	// Used to join a child
 	private Lock statusLock;
 	private Condition joinCond;
+	
+	private static byte[] bigMem = Machine.processor().getMemory();
 
 	
 	

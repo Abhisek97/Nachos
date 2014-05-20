@@ -17,7 +17,7 @@ int main(int argc, char** argv)
 
   src = open(argv[1]);
   if (src==-1) {
-    printf("Open to open %s\n", argv[1]);
+    printf("Unable to open %s\n", argv[1]);
     return 1;
   }
 
