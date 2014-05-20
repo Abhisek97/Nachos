@@ -7,6 +7,7 @@ import nachos.userprog.*;
 import java.io.EOFException;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.NoSuchElementException;
 
 /**
  * Encapsulates the state of a user process that is not contained in its user
@@ -428,32 +429,6 @@ public class UserProcess {
 			Lib.debug(dbgProcess, "\tinsufficient physical memory");
 			return false;
 		}
-
-		// Modification for Proj 2: Allocating pages for text section, stack, arguments
-		// TODO: May need to allocate Stack pages at the end of the pageTable
-		//       from high to low memory.
-		for (int i = 0; i < numPages; i++) {
-		    TranslationEntry entry = pageTable[i];
-		    UserKernel.physPageMutex.P();
-		    Integer pageNumber = UserKernel.physicalPages.removeFirst();
-		    if (pageNumber == null)
-		    {
-		    	// Not enough physical memory left, so give the pages back
-		    	// to the processor and return false
-		    	for (int j = 0; j < i; j++)
-		    	{
-		    		TranslationEntry entry2 = pageTable[j];
-				    UserKernel.physPageMutex.P();
-				    UserKernel.physicalPages.add(entry2.ppn);
-				    UserKernel.physPageMutex.V();
-				    entry2.valid = false;
-		    	}
-		    	return false;
-		    }
-		    UserKernel.physPageMutex.V();
-		    entry.ppn = pageNumber;
-		    entry.valid = true;
-		}
 		
 		// load sections
 		for (int s = 0; s < coff.getNumSections(); s++) {
@@ -472,7 +447,19 @@ public class UserProcess {
 				TranslationEntry entry = pageTable[vpn];
 				
 				UserKernel.physPageMutex.P();
-				Integer thePage = UserKernel.physicalPages.removeFirst();
+				Integer thePage = null;
+				try
+			    {
+			    	thePage = UserKernel.physicalPages.removeFirst();
+
+			    }
+			    catch (NoSuchElementException e)
+			    {
+			    	// Not enough physical memory left, so give the pages back
+			    	// to the processor and return false
+			    	unloadSections();
+			    	return false;
+			    }
 				UserKernel.physPageMutex.V();
 				
 				entry.ppn = thePage;
@@ -480,6 +467,34 @@ public class UserProcess {
 				entry.readOnly = section.isReadOnly();
 				section.loadPage(i, entry.ppn);
 			}
+		}
+		
+		// Modification for Proj 2: Allocating pages for text section, stack, arguments
+		// i starts at numPages-9 for only modifying the pageTable entries for the 8
+		// pages of stack and 1 additional page for arguments
+		// TODO: May need to allocate Stack pages at the end of the pageTable
+		//       from high to low memory.
+		for (int i = numPages-9; i < numPages; i++) {
+		    TranslationEntry entry = pageTable[i];
+		    UserKernel.physPageMutex.P();
+		    Integer pageNumber = null;
+		    try
+		    {
+		    	pageNumber = UserKernel.physicalPages.removeFirst();
+
+		    }
+		    catch (NoSuchElementException e)
+		    {
+		    	// Not enough physical memory left, so give the pages back
+		    	// to the processor and return false
+		    	unloadSections();
+		    	return false;
+		    }
+		    
+		    
+		    UserKernel.physPageMutex.V();
+		    entry.ppn = pageNumber;
+		    entry.valid = true;
 		}
 
 		return true;
@@ -614,7 +629,7 @@ public class UserProcess {
 	 */
 	private int handleJoin(int processID, int status) {
 		
-		if(!children.contains(processID)) {
+		if(!children.containsKey(processID)) {
 			Lib.debug(dbgProcess, "\thandleJoin: Attempting to join a non-child process or"
 					+ " this is child this parent has already joined");
 			return -1;
@@ -673,23 +688,29 @@ public class UserProcess {
 		exitStatus = status;
 		statusLock.release();
 		
+		// Synchronize so parent cannot become null after the check
+		parentMutex.P();
 		if (parent != null)
 		{
 			parent.statusLock.acquire();
-			parent.joinCond.notifyAll();
+			parent.joinCond.wakeAll();
 			parent.statusLock.release();
 
 		}
+		parentMutex.V();
 		
 		// Set each of the children's parent reference to null to mee the condition
 		// "Any children of the process no longer have a parent process"
-		for (UserProcess up : children.values())
+		for (UserProcess aChild : children.values())
 		{
-			up.parent = null;
+			aChild.parentMutex.P();
+			aChild.parent = null;
+			aChild.parentMutex.V();
 		}
 		
 		// Handles calling terminate when this is the last process
 		decProcessCount();
+		
 		
 		UThread.finish();
 		return status;
@@ -884,7 +905,9 @@ public class UserProcess {
 		int writeByte = theFile.write(buff, 0, count);
 		
 		if (readBytes != writeByte)
+		{
 			Lib.debug(dbgProcess, "\tIn handleWrite and not all bytes written");
+		}
 		
 		if(writeByte == -1)
 		{
@@ -1116,6 +1139,7 @@ public class UserProcess {
 	
 	private int pID;
 	
+	private Semaphore parentMutex = new Semaphore(1);
 	private UserProcess parent;
 		
 	private Hashtable<Integer,UserProcess> children = new Hashtable<Integer, UserProcess>();
@@ -1126,7 +1150,7 @@ public class UserProcess {
 	private Lock statusLock;
 	private Condition joinCond;
 	
-	private static byte[] bigMem = Machine.processor().getMemory();
+//	private static byte[] bigMem = Machine.processor().getMemory();
 
 	
 	
