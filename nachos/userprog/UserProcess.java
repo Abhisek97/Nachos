@@ -153,10 +153,14 @@ public class UserProcess {
 	 * @return the number of bytes successfully transferred.
 	 */
 	public int readVirtualMemory(int vaddr, byte[] data, int offset, int length) {
-		Lib.assertTrue(offset >= 0 && length >= 0
-				&& offset + length <= data.length);
+//		Lib.assertTrue(offset >= 0 && length >= 0
+//				&& offset + length <= data.length);
 
 		if (data == null)
+			return 0;
+		
+		if (!(offset >= 0 && length >= 0
+				&& offset + length <= data.length))
 			return 0;
 		
 		byte[] memory = Machine.processor().getMemory();
@@ -249,10 +253,14 @@ public class UserProcess {
 	 * @return the number of bytes successfully transferred.
 	 */
 	public int writeVirtualMemory(int vaddr, byte[] data, int offset, int length) {
-		Lib.assertTrue(offset >= 0 && length >= 0
-				&& offset + length <= data.length);
+//		Lib.assertTrue(offset >= 0 && length >= 0
+//				&& offset + length <= data.length);
 
 		if (data == null)
+			return 0;
+		
+		if (!(offset >= 0 && length >= 0
+				&& offset + length <= data.length))
 			return 0;
 		
 		byte[] memory = Machine.processor().getMemory();
@@ -642,19 +650,21 @@ public class UserProcess {
 		
 		// Lock should appropriately handle synchronization of child's status
 		Integer childStatus = child.exitStatus;
-		child.statusLock.release();
+
 
 		if (childStatus == null)
 		{
 			statusLock.acquire();
+			child.statusLock.release();
 			joinCond.sleep();
 			statusLock.release();
 			
 			child.statusLock.acquire();
 			// Status better be in the table now
 			childStatus = child.exitStatus;
-			child.statusLock.release();
+
 		}
+		child.statusLock.release();
 		Lib.assertTrue(childStatus != null);
 		
 		// Child should no longer be joinable as in syscall.h
@@ -699,7 +709,7 @@ public class UserProcess {
 		}
 		parentMutex.V();
 		
-		// Set each of the children's parent reference to null to mee the condition
+		// Set each of the children's parent reference to null to meet the condition
 		// "Any children of the process no longer have a parent process"
 		for (UserProcess aChild : children.values())
 		{
