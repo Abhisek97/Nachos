@@ -178,7 +178,7 @@ public class UserProcess {
 		// for now, just assume that virtual addresses equal physical addresses
 		if (realAddr < 0 || realAddr >= memory.length || !entry.valid)
 		{
-			entry.used = true;
+			entry.used = false;
 			return 0;
 		}
 		
@@ -211,6 +211,7 @@ public class UserProcess {
 					
 					currEntry.used = true;
 					pageOffset = 0;
+					currPpn = currEntry.ppn;
 					currAddr = currPpn * pageSize;
 				}
 			}
@@ -283,7 +284,7 @@ public class UserProcess {
 		// for now, just assume that virtual addresses equal physical addresses
 		if (realAddr < 0 || realAddr >= memory.length || !entry.valid)
 		{
-			entry.used = true;
+			entry.used = false;
 			return 0;
 		}
 		
@@ -318,6 +319,7 @@ public class UserProcess {
 					
 					currEntry.used = true;
 					pageOffset = 0;
+					currPpn = currEntry.ppn;
 					currAddr = currPpn * pageSize;
 				}
 			}
