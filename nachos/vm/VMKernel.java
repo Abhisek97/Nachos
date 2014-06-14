@@ -24,6 +24,9 @@ public class VMKernel extends UserKernel {
 		freePages = new LinkedList<Integer>();
 		pinnedPages = new ArrayList<Integer>();
 		
+		for(int i=0; i<100; i++){
+            freePages.add(i);
+        }
 	}
 
 	/**
@@ -248,6 +251,7 @@ public class VMKernel extends UserKernel {
 	protected HashMap<MetaData, TranslationEntry> swapSpace;
 	protected HashMap<MetaData, Integer> diskLoc; 
 	public static OpenFile swapFile;
+	private static String swapName = "swap";
 	private Lock pinLock;
 	private Lock spLock;
 	private Lock iptLock;
