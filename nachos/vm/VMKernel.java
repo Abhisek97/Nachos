@@ -14,6 +14,10 @@ public class VMKernel extends UserKernel {
 	 */
 	public VMKernel() {
 		super();
+		for (int i = 0; i < iPageTable.length; i++)
+		{
+			iPageTable[i] = null;
+		}
 	}
 
 	/**
@@ -22,6 +26,13 @@ public class VMKernel extends UserKernel {
 	public void initialize(String[] args) {
 		super.initialize(args);
 	}
+
+//	public static class MetaData {
+//		// virtual page number
+//		int vpn;
+//		
+//		// 
+//	}
 
 	/**
 	 * Test this kernel.
@@ -43,6 +54,8 @@ public class VMKernel extends UserKernel {
 	public void terminate() {
 		super.terminate();
 	}
+	
+	public static VMProcess[] iPageTable = new VMProcess[Machine.processor().getNumPhysPages()]; 
 
 	// dummy variables to make javac smarter
 	private static VMProcess dummy1 = null;

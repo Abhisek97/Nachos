@@ -86,6 +86,8 @@ public class VMProcess extends UserProcess {
             handleTLBMiss(e);
             break;
 		case Processor.exceptionPageFault:
+//			int f = Machine.processor().readRegister(Processor.regBadVAddr);
+//            handleTLBMiss(f);
             break;
 		default:
 			super.handleException(cause);

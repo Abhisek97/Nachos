@@ -1200,34 +1200,34 @@ public class UserProcess {
 	/** The number of pages in the program's stack. */
 	protected final int stackPages = 8;
 
-	private int initialPC, initialSP;
+	protected int initialPC, initialSP;
 
-	private int argc, argv;
+	protected int argc, argv;
 
-	private static final int pageSize = Processor.pageSize;
+	protected static final int pageSize = Processor.pageSize;
 
-	private static final char dbgProcess = 'a';
+	protected static final char dbgProcess = 'a';
 	
 	//Added variables
-	private OpenFile[] fileDescriptor;
+	protected OpenFile[] fileDescriptor;
 	
 	// TODO: possibly get rid of currentlyOpened if it is no longer useful
 //	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
 	
 //	private static Semaphore openFilesMutex = new Semaphore(1);
 	
-	private int pID;
+	protected int pID;
 	
-	private Semaphore parentMutex = new Semaphore(1);
-	private UserProcess parent;
+	protected Semaphore parentMutex = new Semaphore(1);
+	protected UserProcess parent;
 		
-	private Hashtable<Integer,UserProcess> children = new Hashtable<Integer, UserProcess>();
+	protected Hashtable<Integer,UserProcess> children = new Hashtable<Integer, UserProcess>();
 	
-	private Integer exitStatus;
+	protected Integer exitStatus;
 	
 	// Used to join a child
-	private Lock statusLock;
-	private Condition joinCond;
+	protected Lock statusLock;
+	protected Condition joinCond;
 	
 //	private static byte[] bigMem = Machine.processor().getMemory();
 
