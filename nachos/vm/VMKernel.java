@@ -16,18 +16,22 @@ public class VMKernel extends UserKernel {
 	 */
 	public VMKernel() {
 		super();
-		for (int i = 0; i < iPageTable.length; i++)
-		{
-			iPageTable[i] = null;
-		}
+
 	}
 
 	/**
 	 * Initialize this kernel.
 	 */
 	public void initialize(String[] args) {
-		
+				
+		pinnedPages = new ArrayList<Integer>();
 		pinLock = new Lock();
+		iptLock = new Lock();
+		
+		for (int i = 0; i < iPageTable.length; i++)
+		{
+			iPageTable[i] = null;
+		}
 		
 		super.initialize(args);
 	}
@@ -95,7 +99,8 @@ public class VMKernel extends UserKernel {
 	protected ArrayList<Integer> pinnedPages;
 	private Lock pinLock;
 	
-	public static MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()]; 
+	private Lock iptLock;
+	private MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()]; 
 
 	// dummy variables to make javac smarter
 	private static VMProcess dummy1 = null;
