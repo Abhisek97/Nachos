@@ -27,12 +27,23 @@ public class VMKernel extends UserKernel {
 		super.initialize(args);
 	}
 
-//	public static class MetaData {
-//		// virtual page number
-//		int vpn;
-//		
-//		// 
-//	}
+	public static class MetaData {
+		// virtual page number
+		int vpn;
+		
+		// owning process
+		VMProcess ownProcess;
+		
+		// pinned condition
+		boolean pinned;
+		
+		public MetaData(int vpn, VMProcess ownProcess, boolean pinned)
+		{
+			this.vpn = vpn;
+			this.ownProcess = ownProcess;
+			this.pinned = pinned;
+		}
+	}
 
 	/**
 	 * Test this kernel.
@@ -55,7 +66,7 @@ public class VMKernel extends UserKernel {
 		super.terminate();
 	}
 	
-	public static VMProcess[] iPageTable = new VMProcess[Machine.processor().getNumPhysPages()]; 
+	public static MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()]; 
 
 	// dummy variables to make javac smarter
 	private static VMProcess dummy1 = null;
