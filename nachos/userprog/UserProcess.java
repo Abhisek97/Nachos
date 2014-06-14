@@ -667,7 +667,7 @@ public class UserProcess {
 
 		}
 		child.statusLock.release();
-		Lib.assertTrue(childStatus != null);
+//		Lib.assertTrue(childStatus != null);
 		
 		// Child should no longer be joinable as in syscall.h
 		children.remove(processID);
