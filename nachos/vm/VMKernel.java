@@ -34,6 +34,7 @@ public class VMKernel extends UserKernel {
 		pinnedPages = new ArrayList<Integer>();
 		pinLock = new Lock();
 		iptLock = new Lock();
+		spLock = new Lock();
 		
 		for (int i = 0; i < iPageTable.length; i++)
 		{
@@ -117,14 +118,14 @@ public class VMKernel extends UserKernel {
             int i =0;
             while(i< pagesCanBeSwapped.size())
             {
-                //swapLock.acquire();
+                spLock.acquire();
                 swapPage = pagesCanBeSwapped.get(i);
-                //swapLock.release();
+                spLock.release();
                 
                 if(!contains(swapPage)){
-                    //swapLock.acquire();
+                    spLock.acquire();
                     swapPage = pagesCanBeSwapped.remove(i);
-                    //swapLock.release();
+                    spLock.release();
                     break;
                 }
                 i = (i+1) % (pagesCanBeSwapped.size());
@@ -148,20 +149,25 @@ public class VMKernel extends UserKernel {
 
         int size = Processor.pageSize;
         
-        byte[] pageContents = new byte[size];
-        byte[] memory = Machine.processor().getMemory();
+        //if dirty, write to swap space
+        if(swapPage.dirty)  {
+        	byte[] pageContents = new byte[size];
+        	byte[] memory = Machine.processor().getMemory();
 
-        System.arraycopy(memory, swapPage.ppn*size, pageContents, 0, size);
-        int loc = freePages.removeFirst()*size;
-        swapFile.write(loc, pageContents, 0, size);
+        	System.arraycopy(memory, swapPage.ppn*size, pageContents, 0, size);
+        	int loc = freePages.removeFirst()*size;
+        	swapFile.write(loc, pageContents, 0, size);
+        }
+        
         MetaData removedPage = iPageTable[removed];
         swapSpace.put(removedPage,swapPage);
-        //
+        
+        
         return swapPage.ppn;
     }
 	
 	public int swapIn(int vpn, VMProcess process){
-        TranslationEntry freeEntry = getFreePage(vpn);
+        TranslationEntry freeEntry = allocEntry(vpn, process, true, false);
         MetaData data = new MetaData(vpn, process, false);
         
         int loc = diskLoc.get(data);
@@ -182,6 +188,58 @@ public class VMKernel extends UserKernel {
 
     }
 	
+	public int allocPage(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
+        int ppn = -1;
+        
+        if(freePages.size() > 0) {
+            ppn = freePages.getFirst();
+            return ppn;
+        }
+        else
+            ppn = swapOut();
+
+        TranslationEntry newPage = new TranslationEntry(vpn, ppn, true, readOnly, false, false);
+
+        if(canSwap)
+            pagesCanBeSwapped.add(newPage);
+
+        MetaData data = new MetaData(vpn, process, false);
+        
+        iptLock.acquire();
+        iPageTable[ppn] =  data;
+        iptLock.release();
+
+        return ppn;
+
+    }
+	
+	//Does the same thing as allocPage but i needed a way to return the translation entry :( kinda redundant 
+	public TranslationEntry allocEntry(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
+        int ppn = -1;
+        
+        if(freePages.size() > 0) {
+            ppn = freePages.getFirst();
+            return ppn;
+        }
+        else
+            ppn = swapOut();
+
+        TranslationEntry newPage = new TranslationEntry(vpn, ppn, true, readOnly, false, false);
+
+        if(canSwap)
+            pagesCanBeSwapped.add(newPage);
+
+        MetaData data = new MetaData(vpn, process, false);
+        
+        iptLock.acquire();
+        iPageTable[ppn] =  data;
+        iptLock.release();
+
+        return newPage;
+
+    }
+	
+	
 	//Define Variables
 	//*******************************************************************************************
 	
@@ -192,7 +250,7 @@ public class VMKernel extends UserKernel {
 	protected HashMap<MetaData, Integer> diskLoc; 
 	public static OpenFile swapFile;
 	private Lock pinLock;
-	
+	private Lock spLock;
 	private Lock iptLock;
 	private MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()]; 
 
