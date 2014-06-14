@@ -219,7 +219,6 @@ public class VMKernel extends UserKernel {
         
         if(freePages.size() > 0) {
             ppn = freePages.getFirst();
-            return ppn;
         }
         else
             ppn = swapOut();
