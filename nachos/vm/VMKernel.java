@@ -85,6 +85,13 @@ public class VMKernel extends UserKernel {
         pinLock.release();
     }
 	
+	public boolean contains(Integer i){
+		pinLock.acquire();
+		boolean result = pinnedPages.contains(i);
+		pinLock.release();
+		return result;
+	}
+	
 	protected ArrayList<Integer> pinnedPages;
 	private Lock pinLock;
 	
