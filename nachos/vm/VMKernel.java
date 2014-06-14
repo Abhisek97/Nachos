@@ -1,5 +1,7 @@
 package nachos.vm;
 
+import java.util.ArrayList;
+
 import nachos.machine.*;
 import nachos.threads.*;
 import nachos.userprog.*;
@@ -24,6 +26,9 @@ public class VMKernel extends UserKernel {
 	 * Initialize this kernel.
 	 */
 	public void initialize(String[] args) {
+		
+		pinLock = new Lock();
+		
 		super.initialize(args);
 	}
 
@@ -54,6 +59,23 @@ public class VMKernel extends UserKernel {
 	public void terminate() {
 		super.terminate();
 	}
+	
+	
+	
+	public void pinPage(Integer i){
+        pinLock.acquire();
+        pinnedPages.add(i);
+        pinLock.release();
+    }
+	
+	public void unPinPage(Integer i){
+        pinLock.acquire();
+        pinnedPages.remove(i);
+        pinLock.release();
+    }
+	
+	protected ArrayList<Integer> pinnedPages;
+	private Lock pinLock;
 	
 	public static VMProcess[] iPageTable = new VMProcess[Machine.processor().getNumPhysPages()]; 
 
