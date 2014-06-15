@@ -17,7 +17,7 @@ public class VMProcess extends UserProcess {
 	 */
 	public VMProcess() {
 		super();
-		spnTable = new Integer[pageTable.length];
+//		spnTable = new Integer[pageTable.length];
 	}
 
 	/**
@@ -69,7 +69,7 @@ public class VMProcess extends UserProcess {
 			return false;
 		}
 		
-		// load sections
+		// prep for easy swap-in/out checks later
 		for (int s = 0; s < coff.getNumSections(); s++) {
 			CoffSection section = coff.getSection(s);
 
@@ -78,72 +78,192 @@ public class VMProcess extends UserProcess {
 
 			for (int i = 0; i < section.getLength(); i++) {
 				int vpn = section.getFirstVPN() + i;
-
-				// for now, just assume virtual addresses=physical addresses
-				//section.loadPage(i, vpn);
 				
-				//Modification for Proj 2
+				//Modification for Proj 3
 				TranslationEntry entry = pageTable[vpn];
 				
-				UserKernel.physPageMutex.P();
-				Integer thePage = null;
-				try
-			    {
-			    	thePage = UserKernel.physicalPages.removeFirst();
-
-			    }
-			    catch (NoSuchElementException e)
-			    {
-			    	// Not enough physical memory left, so give the pages back
-			    	// to the processor and return false
-			    	unloadSections();
-			    	return false;
-			    }
-				UserKernel.physPageMutex.V();
+				// set the section number in the vpn to coff sect mapping
+				vpnToCoffSect[vpn] = s;
 				
-				entry.ppn = thePage;
-				entry.valid = true;
+//				entry.ppn = thePage;
+				entry.valid = false;
 				entry.readOnly = section.isReadOnly();
-				section.loadPage(i, entry.ppn);
+//				section.loadPage(i, entry.ppn);
 			}
 		}
 		
-		// Modification for Proj 2: Allocating pages for text section, stack, arguments
-		// i starts at numPages-9 for only modifying the pageTable entries for the 8
-		// pages of stack and 1 additional page for arguments
-		// TODO: May need to allocate Stack pages at the end of the pageTable
-		//       from high to low memory.
-		for (int i = numPages-9; i < numPages; i++) {
-		    TranslationEntry entry = pageTable[i];
-		    UserKernel.physPageMutex.P();
-		    Integer pageNumber = null;
-		    try
-		    {
-		    	pageNumber = UserKernel.physicalPages.removeFirst();
-
-		    }
-		    catch (NoSuchElementException e)
-		    {
-		    	// Not enough physical memory left, so give the pages back
-		    	// to the processor and return false
-		    	unloadSections();
-		    	return false;
-		    }
-		    
-		    
-		    UserKernel.physPageMutex.V();
-		    entry.ppn = pageNumber;
-		    entry.valid = true;
+		for (int j = numPages - (stackPages + 1); j < numPages; j++)
+		{
+			TranslationEntry entry = pageTable[j];
+			
+			// set the section number in the vpn to coff sect mapping
+			// to -3 to indicate it is not a coff page but is stack or args
+			vpnToCoffSect[j] = -3;
+			
+			entry.valid = false;
+			entry.readOnly = false;
 		}
 
 		return true;
+	}
+	
+	private int getCoffSectOffset(int vpn)
+	{
+		if (vpnToCoffSect != null) {
+			CoffSection coffSect = coff.getSection(vpnToCoffSect[vpn]);
+			return vpn - coffSect.getFirstVPN();
+		}
+		else {
+			return -1;
+		}
+		
 	}
 
 	/**
 	 * Release any resources allocated by <tt>loadSections()</tt>.
 	 */
 	protected void unloadSections() {
+		// TODO:
+		// handle removing this process's owned swap pages before unloading
+		// the pages using the super class's unloadSections
+		
 		super.unloadSections();
+	}
+	
+	/**
+	 * Transfer data from this process's virtual memory to the specified array.
+	 * This method handles address translation details. This method must
+	 * <i>not</i> destroy the current process if an error occurs, but instead
+	 * should return the number of bytes successfully copied (or zero if no data
+	 * could be copied).
+	 * 
+	 * @param vaddr the first byte of virtual memory to read.
+	 * @param data the array where the data will be stored.
+	 * @param offset the first byte to write in the array.
+	 * @param length the number of bytes to transfer from virtual memory to the
+	 * array.
+	 * @return the number of bytes successfully transferred.
+	 */
+	public int readVirtualMemory(int vaddr, byte[] data, int offset, int length) {
+//		Lib.assertTrue(offset >= 0 && length >= 0
+//				&& offset + length <= data.length);
+
+		if(!validMemoryArgs(vaddr, data, offset, length))
+			return 0;
+		
+		byte[] memory = Machine.processor().getMemory();
+		int vpn = Processor.pageFromAddress(vaddr);
+		
+		int vpnOffset = Processor.offsetFromAddress(vaddr);
+		TranslationEntry entry = pageTable[vpn];
+		
+		validateEntry(vpn, entry);
+		// entry should now be valid
+		
+		entry.used = true;
+		int realAddr = entry.ppn*pageSize + vpnOffset;
+		
+		// for now, just assume that virtual addresses equal physical addresses
+		if (realAddr < 0 || realAddr >= memory.length)
+		{
+//			entry.used = false;
+			return 0;
+		}
+		
+		// keeps track of what's written to data
+		int written = 0;
+		int bufOffset = offset;
+		int pageOffset = vpnOffset;
+		int currAddr = realAddr;
+		int leftToWrite = length;
+		int currVpn = vpn;
+		int currPpn = entry.ppn;
+		
+		while (written < length)
+		{
+			if (pageOffset + leftToWrite > pageSize)
+			{
+				int amountToWrite = pageSize - pageOffset;
+				System.arraycopy(memory, currAddr, data, bufOffset, amountToWrite);
+				written += amountToWrite;
+				bufOffset += amountToWrite;
+				leftToWrite = length - written;
+				if (++currVpn >= numPages)
+					break;
+				else
+				{
+//					pageTable[currVpn - 1].used = false;
+					TranslationEntry currEntry = pageTable[currVpn];
+					if (!currEntry.valid)
+						validateEntry(currVpn, currEntry);
+					
+					currEntry.used = true;
+					pageOffset = 0;
+					currPpn = currEntry.ppn;
+					currAddr = currPpn * pageSize;
+				}
+			}
+			else
+			{
+				System.arraycopy(memory, currAddr, data, bufOffset, leftToWrite);
+				written += leftToWrite; // written should now equal length
+				bufOffset += leftToWrite;
+			}
+			
+		}
+//		pageTable[currVpn].used = false;
+		return written;
+	}
+	
+	private boolean validMemoryArgs(int vaddr, byte[] data, int offset, int length) {
+		if (data == null)
+			return false;
+		
+		if (!(offset >= 0 && length >= 0
+				&& offset + length <= data.length))
+			return false;
+		
+		byte[] memory = Machine.processor().getMemory();
+
+		if (vaddr < 0 || vaddr >= memory.length)
+			return false;
+		
+		
+		int vpn = Processor.pageFromAddress(vaddr);
+		
+		// vpn outside this program's address space
+		if (vpn >= numPages) {
+			return false;
+		}
+		
+		// if it gets this far, the args are ok
+		return true;
+	}
+
+	private void validateEntry(int vpn, TranslationEntry entry) {
+		if (!entry.valid) {
+			// handle making the page valid be it reading from the coff section
+			// or swapping in a page from memory
+			if (entry.dirty)
+			{
+				entry.ppn = VMKernel.swapIn(vpn, this);
+				entry.valid = true;
+			}
+			else { // entry not dirty
+				int coffSectNum = vpnToCoffSect[vpn];
+				entry.ppn = VMKernel.allocPage(vpn, this, false, entry.readOnly);
+				
+				// if in a coff section, we need to load it
+				if (coffSectNum != -3) {
+					// Get a page from the coff file
+					CoffSection sect = coff.getSection(coffSectNum);
+					sect.loadPage(getCoffSectOffset(vpn), entry.ppn);
+
+				}
+				// just a new blank page for stack or args
+				entry.valid = true;
+			}
+		}
 	}
 
 	/**
@@ -164,7 +284,7 @@ public class VMProcess extends UserProcess {
             break;
 		case Processor.exceptionPageFault:
 //			int f = Machine.processor().readRegister(Processor.regBadVAddr);
-//            handleTLBMiss(f);
+//            handlePageFault(f);
             break;
 		default:
 			super.handleException(cause);
@@ -233,10 +353,7 @@ public class VMProcess extends UserProcess {
 		
 		do
 		{
-			
-			try {
-				ppn = VMKernel.physicalPages.removeFirst().intValue();
-			} catch (Exception e) { }
+			ppn = VMKernel.allocPage(fault, this, false, faultEntry.readOnly);
 			
 			if (ppn < 0)
 			{
@@ -286,7 +403,9 @@ public class VMProcess extends UserProcess {
 	
 	private static int clockhand = 0;
 	
-	private Integer[] spnTable;
+	private int[] vpnToCoffSect;
+	
+//	private Integer[] spnTable;
 	
 	private static final int pageSize = Processor.pageSize;
 

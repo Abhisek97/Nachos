@@ -44,7 +44,7 @@ public class VMKernel extends UserKernel {
 			iPageTable[i] = null;
 		}
 		
-		swapFile = ThreadedKernel.fileSystem.open(swapFile.getName(), true);
+		swapFile = ThreadedKernel.fileSystem.open(swapName, true);
 		
 		super.initialize(args);
 	}
@@ -94,19 +94,19 @@ public class VMKernel extends UserKernel {
 	
 
 	
-	public void pinPage(Integer i){
+	public static void pinPage(Integer i){
         pinLock.acquire();
         pinnedPages.add(i);
         pinLock.release();
     }
 	
-	public void unPinPage(Integer i){
+	public static void unPinPage(Integer i){
         pinLock.acquire();
         pinnedPages.remove(i);
         pinLock.release();
     }
 	
-	public boolean contains(TranslationEntry i){
+	public static boolean contains(TranslationEntry i){
 		pinLock.acquire();
 		boolean result = pinnedPages.contains(i);
 		pinLock.release();
@@ -114,7 +114,7 @@ public class VMKernel extends UserKernel {
 	}
 	
 	
-	public int swapOut(){
+	public static int swapOut(){
         TranslationEntry swapPage = null;
 
         if(!pagesCanBeSwapped.isEmpty()){
@@ -169,7 +169,7 @@ public class VMKernel extends UserKernel {
         return swapPage.ppn;
     }
 	
-	public int swapIn(int vpn, VMProcess process){
+	public static int swapIn(int vpn, VMProcess process){
         TranslationEntry freeEntry = allocEntry(vpn, process, true, false);
         MetaData data = new MetaData(vpn, process, false);
         
@@ -191,7 +191,7 @@ public class VMKernel extends UserKernel {
 
     }
 	
-	public int allocPage(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
+	public static int allocPage(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
         int ppn = -1;
         
         if(freePages.size() > 0) {
@@ -217,7 +217,7 @@ public class VMKernel extends UserKernel {
     }
 	
 	//Does the same thing as allocPage but i needed a way to return the translation entry :( kinda redundant 
-	public TranslationEntry allocEntry(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
+	public static TranslationEntry allocEntry(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
         int ppn = -1;
         
         if(freePages.size() > 0) {
@@ -245,17 +245,39 @@ public class VMKernel extends UserKernel {
 	//Define Variables
 	//*******************************************************************************************
 	
-	protected ArrayList<Integer> pinnedPages;
-	protected ArrayList<TranslationEntry> pagesCanBeSwapped;
+	protected static ArrayList<Integer> pinnedPages;
+	protected static ArrayList<TranslationEntry> pagesCanBeSwapped;
 	protected static LinkedList<Integer> freePages;
-	protected HashMap<MetaData, TranslationEntry> swapSpace;
-	protected HashMap<MetaData, Integer> diskLoc; 
+	protected static HashMap<MetaData, TranslationEntry> swapSpace;
+	protected static HashMap<MetaData, Integer> diskLoc; 
 	public static OpenFile swapFile;
-	private static String swapName = "swap";
-	private Lock pinLock;
-	private Lock spLock;
-	private Lock iptLock;
-	private MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()]; 
+	private static String swapName = ".teamGabNap";
+	public static Lock pinLock;
+	public static Lock spLock;
+	public static Lock iptLock;
+	public static MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()];
+	
+	// inherited variables
+//	/** Globally accessible reference to the synchronized console. */
+//	public static SynchConsole console;
+//
+//	// dummy variables to make javac smarter
+//	private static Coff dummy1 = null;
+//	
+//	//Adding new variables for CSE120 Proj 2 Part II 
+//	public static LinkedList<Integer> physicalPages;
+//	
+//	public static Semaphore physPageMutex;
+//	
+//	public static Semaphore processIDMutex;
+//	
+//	public static int processID;
+//	
+//	public static int processCount;
+//	public static Semaphore pCountMutex;
+//	
+//	//References the root process
+//	public static UserProcess root = null;
 
 	// dummy variables to make javac smarter
 	private static VMProcess dummy1 = null;
