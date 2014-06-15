@@ -168,6 +168,7 @@ public class VMProcess extends UserProcess {
 		// entry should now be valid
 		
 		entry.used = true;
+		VMKernel.iPageTable[entry.ppn].pinned = true;
 		int realAddr = entry.ppn*pageSize + vpnOffset;
 		
 		// for now, just assume that virtual addresses equal physical addresses
@@ -199,12 +200,15 @@ public class VMProcess extends UserProcess {
 					break;
 				else
 				{
+					TranslationEntry prevEntry = pageTable[currVpn-1];
+					VMKernel.iPageTable[prevEntry.ppn].pinned = true;
 //					pageTable[currVpn - 1].used = false;
 					TranslationEntry currEntry = pageTable[currVpn];
 					if (!currEntry.valid)
 						handlePageFault(currVpn);
 					
 					currEntry.used = true;
+					VMKernel.iPageTable[currEntry.ppn].pinned = true;
 					pageOffset = 0;
 					currPpn = currEntry.ppn;
 					currAddr = currPpn * pageSize;
@@ -218,6 +222,8 @@ public class VMProcess extends UserProcess {
 			}
 			
 		}
+		TranslationEntry currEntry = pageTable[currVpn];
+		VMKernel.iPageTable[currEntry.ppn].pinned = false;
 //		pageTable[currVpn].used = false;
 		return written;
 	}
@@ -257,6 +263,7 @@ public class VMProcess extends UserProcess {
 		// entry should now be valid
 		
 		entry.used = true;
+		VMKernel.iPageTable[entry.ppn].pinned = true;
 		int realAddr = entry.ppn*pageSize + vpnOffset;
 		
 		// for now, just assume that virtual addresses equal physical addresses
@@ -288,8 +295,11 @@ public class VMProcess extends UserProcess {
 					break;
 				else
 				{
+					TranslationEntry prevEntry = pageTable[currVpn-1];
+					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
 //					pageTable[currVpn - 1].used = false;
 					TranslationEntry currEntry = pageTable[currVpn];
+					
 					
 					// Make sure the next page is also not read only
 					if (currEntry.readOnly) {
@@ -301,6 +311,7 @@ public class VMProcess extends UserProcess {
 						handlePageFault(currVpn);
 					
 					currEntry.used = true;
+					VMKernel.iPageTable[currEntry.ppn].pinned = true;
 					pageOffset = 0;
 					currPpn = currEntry.ppn;
 					currAddr = currPpn * pageSize;
@@ -314,6 +325,8 @@ public class VMProcess extends UserProcess {
 			}
 			
 		}
+		TranslationEntry currEntry = pageTable[currVpn];
+		VMKernel.iPageTable[currEntry.ppn].pinned = true;
 //		pageTable[currVpn].used = false;
 		return written;
 	}
@@ -386,6 +399,7 @@ public class VMProcess extends UserProcess {
             handleTLBMiss(e);
             break;
 		case Processor.exceptionPageFault:
+			Lib.debug(dbgProcess, "Pagefault in handleException!");
 //			int f = Machine.processor().readRegister(Processor.regBadVAddr);
 //            handlePageFault(f);
             break;
@@ -398,6 +412,8 @@ public class VMProcess extends UserProcess {
 	
 	protected void handleTLBMiss(int miss){
         
+		int missPage = Processor.offsetFromAddress(miss);
+		
         int tlbToBeSwapped = -1;
         
         //loops through all the entries of the tlb checking to see if its valid.
@@ -432,20 +448,21 @@ public class VMProcess extends UserProcess {
         }
         
         //Get the translation entry for the missed entry
-        TranslationEntry entryToBeAdded = pageTable[miss];
+        TranslationEntry entryToBeAdded = pageTable[missPage];
         
         int loopCheck = 0;
         while (!entryToBeAdded.valid) {
-            handlePageFault(miss);
+            handlePageFault(missPage);
             if (loopCheck++ == 1)
             	Lib.debug(dbgProcess, "In handleTLBMiss loop more than once");
-//            entryToBeAdded = new TranslationEntry(pageTable[miss]);
+//            entryToBeAdded = new TranslationEntry(pageTable[missPage]);
         }
         
         //Finally add the entry in the TLB :) 
         Machine.processor().writeTLBEntry(tlbToBeSwapped, entryToBeAdded);
 	}
 	
+	// The fault here is actually the vpn and not a badVaddr
 	protected void handlePageFault(int fault){
 		
 		TranslationEntry entry = pageTable[fault];

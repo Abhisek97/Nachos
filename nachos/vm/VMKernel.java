@@ -67,6 +67,14 @@ public class VMKernel extends UserKernel {
 			this.ownProcess = ownProcess;
 			this.pinned = pinned;
 		}
+		
+		public TranslationEntry[] getPT() {
+			return ownProcess.getPT();			
+		}
+		
+		public TranslationEntry getEntry() {
+			return getPT()[vpn];
+		}
 	}
 
 	/**
@@ -204,18 +212,38 @@ public class VMKernel extends UserKernel {
 		
 		while (ppn < 0)
 		{
+			
+			if (physicalPages.size() != 0) {
+				ppn = physicalPages.getFirst();
+				break;
+			}
+//			ppn = VMKernel.allocPage(fault, this, false, faultEntry.readOnly);
+			
 			VMKernel.MetaData currMet = VMKernel.iPageTable[clockhand];
 			
 			if(!currMet.pinned)
 			{
 				// possible to be evicted if not pinned
-				TranslationEntry currEntry = currMet.ownProcess.getPT()[currMet.vpn];
+				TranslationEntry currEntry = currMet.getEntry();
+				int tlbIndex = -1;
+
+				for (int i = 0; i < Machine.processor().getTLBSize(); i++) {
+			        TranslationEntry entry = Machine.processor().readTLBEntry(i);
+			        if (entry.vpn == currEntry.vpn) {
+			            currMet.getPT()[entry.vpn] = new TranslationEntry(entry);
+			            tlbIndex = i;
+			            break;
+			        }
+			    }
+				currEntry = currMet.getEntry();
 				if(currEntry.used)
 					currEntry.used = false;
 				else {
 					if (currEntry.dirty) {
 						// evict and swap
-						
+						if (tlbIndex != -1) {
+							
+						}
 					}
 					else {
 						// evict without swapping
@@ -232,10 +260,6 @@ public class VMKernel extends UserKernel {
 			{
 				// condition variable wait
 			}
-			
-			if (physicalPages.size() != 0)
-				ppn = physicalPages.getFirst();
-//			ppn = VMKernel.allocPage(fault, this, false, faultEntry.readOnly);
 			
 		} // end while (ppn < 0)
 		
@@ -294,7 +318,7 @@ public class VMKernel extends UserKernel {
 	
 	protected static ArrayList<Integer> pinnedPages;
 	protected static ArrayList<TranslationEntry> pagesCanBeSwapped;
-	protected static LinkedList<Integer> freePages;
+//	protected static LinkedList<Integer> freePages;
 	protected static int swapPageCount = 5;
 	protected static LinkedList<Integer> swapPages;
 	protected static HashMap<MetaData, TranslationEntry> swapSpace;
