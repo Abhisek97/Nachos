@@ -215,6 +215,100 @@ public class VMProcess extends UserProcess {
 		return written;
 	}
 	
+	/**
+	 * Transfer data from the specified array to this process's virtual memory.
+	 * This method handles address translation details. This method must
+	 * <i>not</i> destroy the current process if an error occurs, but instead
+	 * should return the number of bytes successfully copied (or zero if no data
+	 * could be copied).
+	 * 
+	 * @param vaddr the first byte of virtual memory to write.
+	 * @param data the array containing the data to transfer.
+	 * @param offset the first byte to transfer from the array.
+	 * @param length the number of bytes to transfer from the array to virtual
+	 * memory.
+	 * @return the number of bytes successfully transferred.
+	 */
+	public int writeVirtualMemory(int vaddr, byte[] data, int offset, int length) {
+//		Lib.assertTrue(offset >= 0 && length >= 0
+//				&& offset + length <= data.length);
+
+		// checks to make sure the args are valid
+		if(!validMemoryArgs(vaddr, data, offset, length))
+			return 0;
+		
+		byte[] memory = Machine.processor().getMemory();
+		int vpn = Processor.pageFromAddress(vaddr);
+		
+		int vpnOffset = Processor.offsetFromAddress(vaddr);
+		TranslationEntry entry = pageTable[vpn];
+		
+		// ensures the current entry is a valid one or makes it valid
+		validateEntry(vpn, entry);
+		// entry should now be valid
+		
+		entry.used = true;
+		int realAddr = entry.ppn*pageSize + vpnOffset;
+		
+		// for now, just assume that virtual addresses equal physical addresses
+		if (realAddr < 0 || realAddr >= memory.length)
+		{
+//			entry.used = false;
+			return 0;
+		}
+		
+		// keeps track of what's written to data
+		int written = 0;
+		int bufOffset = offset;
+		int pageOffset = vpnOffset;
+		int currAddr = realAddr;
+		int leftToWrite = length;
+		int currVpn = vpn;
+		int currPpn = entry.ppn;
+		
+		while (written < length)
+		{
+			if (pageOffset + leftToWrite > pageSize)
+			{
+				int amountToWrite = pageSize - pageOffset;
+				System.arraycopy(data, bufOffset, memory, currAddr, amountToWrite);
+				written += amountToWrite;
+				bufOffset += amountToWrite;
+				leftToWrite = length - written;
+				if (++currVpn >= numPages)
+					break;
+				else
+				{
+//					pageTable[currVpn - 1].used = false;
+					TranslationEntry currEntry = pageTable[currVpn];
+					
+					// Make sure the next page is also not read only
+					if (currEntry.readOnly) {
+						Lib.debug(dbgProcess, "Somehow next entry is readOnly");
+						break;
+					}
+						
+					if (!currEntry.valid)
+						validateEntry(currVpn, currEntry);
+					
+					currEntry.used = true;
+					pageOffset = 0;
+					currPpn = currEntry.ppn;
+					currAddr = currPpn * pageSize;
+				}
+			}
+			else
+			{
+				System.arraycopy(data, bufOffset, memory, currAddr, leftToWrite);
+				written += leftToWrite; // written should now equal length
+				bufOffset += leftToWrite;
+			}
+			
+		}
+//		pageTable[currVpn].used = false;
+		return written;
+	}
+	
 	private boolean validMemoryArgs(int vaddr, byte[] data, int offset, int length) {
 		if (data == null)
 			return false;
