@@ -5,8 +5,10 @@ import nachos.threads.*;
 import nachos.userprog.*;
 import nachos.vm.*;
 
+import java.util.Hashtable;
 import java.util.NoSuchElementException;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A <tt>UserProcess</tt> that supports demand-paging.
@@ -126,6 +128,9 @@ public class VMProcess extends UserProcess {
 		// TODO:
 		// handle removing this process's owned swap pages before unloading
 		// the pages using the super class's unloadSections
+		for (Integer spn : vpnToSpn.values()) {
+			VMKernel.swapPages.addFirst(spn.intValue());
+		}
 		
 		super.unloadSections();
 	}
@@ -157,7 +162,9 @@ public class VMProcess extends UserProcess {
 		int vpnOffset = Processor.offsetFromAddress(vaddr);
 		TranslationEntry entry = pageTable[vpn];
 		
-		validateEntry(vpn, entry);
+		if (!entry.valid)
+			handlePageFault(vpn);
+//		validateEntry(vpn, entry);
 		// entry should now be valid
 		
 		entry.used = true;
@@ -195,7 +202,7 @@ public class VMProcess extends UserProcess {
 //					pageTable[currVpn - 1].used = false;
 					TranslationEntry currEntry = pageTable[currVpn];
 					if (!currEntry.valid)
-						validateEntry(currVpn, currEntry);
+						handlePageFault(currVpn);
 					
 					currEntry.used = true;
 					pageOffset = 0;
@@ -244,7 +251,9 @@ public class VMProcess extends UserProcess {
 		TranslationEntry entry = pageTable[vpn];
 		
 		// ensures the current entry is a valid one or makes it valid
-		validateEntry(vpn, entry);
+		if (!entry.valid)
+			handlePageFault(vpn);
+//		validateEntry(vpn, entry);
 		// entry should now be valid
 		
 		entry.used = true;
@@ -289,7 +298,7 @@ public class VMProcess extends UserProcess {
 					}
 						
 					if (!currEntry.valid)
-						validateEntry(currVpn, currEntry);
+						handlePageFault(currVpn);
 					
 					currEntry.used = true;
 					pageOffset = 0;
@@ -334,31 +343,31 @@ public class VMProcess extends UserProcess {
 		return true;
 	}
 
-	private void validateEntry(int vpn, TranslationEntry entry) {
-		if (!entry.valid) {
-			// handle making the page valid be it reading from the coff section
-			// or swapping in a page from memory
-			if (entry.dirty)
-			{
-				entry.ppn = VMKernel.swapIn(vpn, this);
-				entry.valid = true;
-			}
-			else { // entry not dirty
-				int coffSectNum = vpnToCoffSect[vpn];
-				entry.ppn = VMKernel.allocPage(vpn, this, false, entry.readOnly);
-				
-				// if in a coff section, we need to load it
-				if (coffSectNum != -3) {
-					// Get a page from the coff file
-					CoffSection sect = coff.getSection(coffSectNum);
-					sect.loadPage(getCoffSectOffset(vpn), entry.ppn);
-
-				}
-				// just a new blank page for stack or args
-				entry.valid = true;
-			}
-		}
-	}
+//	private void validateEntry(int vpn, TranslationEntry entry) {
+//		if (!entry.valid) {
+//			// handle making the page valid be it reading from the coff section
+//			// or swapping in a page from memory
+//			if (entry.dirty)
+//			{
+//				entry.ppn = VMKernel.swapIn(vpn, this);
+//				entry.valid = true;
+//			}
+//			else { // entry not dirty
+//				int coffSectNum = vpnToCoffSect[vpn];
+//				entry.ppn = VMKernel.allocPage(vpn, this, false, entry.readOnly);
+//				
+//				// if in a coff section, we need to load it
+//				if (coffSectNum != -3) {
+//					// Get a page from the coff file
+//					CoffSection sect = coff.getSection(coffSectNum);
+//					sect.loadPage(getCoffSectOffset(vpn), entry.ppn);
+//
+//				}
+//				// just a new blank page for stack or args
+//				entry.valid = true;
+//			}
+//		}
+//	}
 
 	/**
 	 * Handle a user exception. Called by <tt>UserKernel.exceptionHandler()</tt>
@@ -423,11 +432,14 @@ public class VMProcess extends UserProcess {
         }
         
         //Get the translation entry for the missed entry
-        TranslationEntry entryToBeAdded = new TranslationEntry(pageTable[miss]);
+        TranslationEntry entryToBeAdded = pageTable[miss];
         
+        int loopCheck = 0;
         while (!entryToBeAdded.valid) {
             handlePageFault(miss);
-            entryToBeAdded = new TranslationEntry(pageTable[miss]);
+            if (loopCheck++ == 1)
+            	Lib.debug(dbgProcess, "In handleTLBMiss loop more than once");
+//            entryToBeAdded = new TranslationEntry(pageTable[miss]);
         }
         
         //Finally add the entry in the TLB :) 
@@ -436,70 +448,97 @@ public class VMProcess extends UserProcess {
 	
 	protected void handlePageFault(int fault){
 		
-		TranslationEntry faultEntry = pageTable[fault];
+		TranslationEntry entry = pageTable[fault];
 		
-		faultEntry.vpn = fault;
-		faultEntry.valid = true;
-		
-		// kernel needs a static condition variable for all pages pinned
-		int ppn = -1;
-		int originalHand = clockhand;
-		
-		do
+		// handle making the page valid be it reading from the coff section
+		// or swapping in a page from memory
+		if (entry.dirty)
 		{
-			ppn = VMKernel.allocPage(fault, this, false, faultEntry.readOnly);
+			entry.ppn = VMKernel.swapIn(fault, this);
+			entry.valid = true;
+		}
+		else { // entry not dirty
+			int coffSectNum = vpnToCoffSect[fault];
+			entry.ppn = VMKernel.allocPage(fault, this, false, entry.readOnly);
 			
-			if (ppn < 0)
-			{
-				VMKernel.MetaData currMet = VMKernel.iPageTable[clockhand];
-				
-				if(!currMet.pinned)
-				{
-					// possible to be evicted if not pinned
-					TranslationEntry currEntry = currMet.ownProcess.pageTable[currMet.vpn];
-					if(currEntry.used)
-						currEntry.used = false;
-					else {
-						if (currEntry.dirty) {
-							// evict and swap
-							
-						}
-						else {
-							// evict without swapping
-							currEntry.valid = false;
-							// 
-							
-							//
-						}
-					}
-				}
-				
-				clockhand = (clockhand + 1) % VMKernel.iPageTable.length;
-				if (clockhand == originalHand)
-				{
-					// condition variable wait
-				}
+			// if in a coff section, we need to load it
+			if (coffSectNum != -3) {
+				// Get a page from the coff file
+				CoffSection sect = coff.getSection(coffSectNum);
+				sect.loadPage(getCoffSectOffset(fault), entry.ppn);
+
 			}
-			
-		} while (ppn < 0);
+			// just a new blank page for stack or args
+			entry.valid = true;
+		}
+		
 		
 		//fault ppn?
 		
 		//VMKernel.invertedPageTable[ppn] = this;
 		
-		for(int i=0; i<coff.getNumSections(); i++) {
-			
-			CoffSection sect = coff.getSection(i);
-			
-			
-		}
+//		for(int i=0; i<coff.getNumSections(); i++) {
+//			
+//			CoffSection sect = coff.getSection(i);
+//			
+//			
+//		}
 	}
 	
-	private static int clockhand = 0;
+	public TranslationEntry[] getPT() {
+		return pageTable;
+	}
 	
+	// Variables
+	
+	// Maps the vpn to what coffsection the page is in
 	private int[] vpnToCoffSect;
 	
+	// keeps track of 
+	public ConcurrentHashMap<Integer, Integer> vpnToSpn;
+	
 //	private Integer[] spnTable;
+	
+	// inherited vars
+//	/** The program being run by this process. */
+//	protected Coff coff;
+//
+//	/** This process's page table. */
+//	protected TranslationEntry[] pageTable;
+//
+//	/** The number of contiguous pages occupied by the program. */
+//	protected int numPages;
+//
+//	/** The number of pages in the program's stack. */
+//	protected final int stackPages = 8;
+//
+//	protected int initialPC, initialSP;
+//
+//	protected int argc, argv;
+//
+//	protected static final int pageSize = Processor.pageSize;
+//
+//	protected static final char dbgProcess = 'a';
+//	
+//	//Added variables
+//	protected OpenFile[] fileDescriptor;
+//	
+////	private static Hashtable<String,Integer> currentlyOpened = new Hashtable<String, Integer>();
+//	
+////	private static Semaphore openFilesMutex = new Semaphore(1);
+//	
+//	protected int pID;
+//	
+//	protected Semaphore parentMutex = new Semaphore(1);
+//	protected UserProcess parent;
+//		
+//	protected Hashtable<Integer,UserProcess> children = new Hashtable<Integer, UserProcess>();
+//	
+//	protected Integer exitStatus;
+//	
+//	// Used to join a child
+//	protected Lock statusLock;
+//	protected Condition joinCond;
 	
 	private static final int pageSize = Processor.pageSize;
 

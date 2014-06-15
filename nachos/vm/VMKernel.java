@@ -19,30 +19,32 @@ public class VMKernel extends UserKernel {
 	public VMKernel() {
 		super();
 
-		swapSpace = new HashMap<MetaData, TranslationEntry>();
-		pagesCanBeSwapped = new ArrayList<TranslationEntry>();
-		freePages = new LinkedList<Integer>();
-		pinnedPages = new ArrayList<Integer>();
-		
-		for(int i=0; i<100; i++){
-            freePages.add(i);
-        }
 	}
 
 	/**
 	 * Initialize this kernel.
 	 */
 	public void initialize(String[] args) {
-				
+		
+
+		swapSpace = new HashMap<MetaData, TranslationEntry>();
+		pagesCanBeSwapped = new ArrayList<TranslationEntry>();
+		freePages = new LinkedList<Integer>();
+		pinnedPages = new ArrayList<Integer>();
+		
+		for(int i=0; i< swapPageCount; i++){
+            swapPages.add(i);
+        }
+		
 		pinnedPages = new ArrayList<Integer>();
 		pinLock = new Lock();
 		iptLock = new Lock();
 		spLock = new Lock();
 		
-		for (int i = 0; i < iPageTable.length; i++)
-		{
-			iPageTable[i] = null;
-		}
+//		for (int i = 0; i < iPageTable.length; i++)
+//		{
+//			iPageTable[i] = null;
+//		}
 		
 		swapFile = ThreadedKernel.fileSystem.open(swapName, true);
 		
@@ -192,7 +194,52 @@ public class VMKernel extends UserKernel {
     }
 	
 	public static int allocPage(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
-        int ppn = -1;
+		
+		// kernel needs a static condition variable for all pages pinned
+		int ppn = -1;
+		int originalHand = clockhand;
+		
+		if (physicalPages.size() != 0)
+			ppn = physicalPages.getFirst();
+		
+		while (ppn < 0)
+		{
+			VMKernel.MetaData currMet = VMKernel.iPageTable[clockhand];
+			
+			if(!currMet.pinned)
+			{
+				// possible to be evicted if not pinned
+				TranslationEntry currEntry = currMet.ownProcess.getPT()[currMet.vpn];
+				if(currEntry.used)
+					currEntry.used = false;
+				else {
+					if (currEntry.dirty) {
+						// evict and swap
+						
+					}
+					else {
+						// evict without swapping
+						currEntry.valid = false;
+						// 
+						
+						//
+					}
+				}
+			}
+			
+			clockhand = (clockhand + 1) % VMKernel.iPageTable.length;
+			if (clockhand == originalHand)
+			{
+				// condition variable wait
+			}
+			
+			if (physicalPages.size() != 0)
+				ppn = physicalPages.getFirst();
+//			ppn = VMKernel.allocPage(fault, this, false, faultEntry.readOnly);
+			
+		} // end while (ppn < 0)
+		
+//        int ppn = -1;
         
         if(freePages.size() > 0) {
             ppn = freePages.getFirst();
@@ -248,6 +295,8 @@ public class VMKernel extends UserKernel {
 	protected static ArrayList<Integer> pinnedPages;
 	protected static ArrayList<TranslationEntry> pagesCanBeSwapped;
 	protected static LinkedList<Integer> freePages;
+	protected static int swapPageCount = 5;
+	protected static LinkedList<Integer> swapPages;
 	protected static HashMap<MetaData, TranslationEntry> swapSpace;
 	protected static HashMap<MetaData, Integer> diskLoc; 
 	public static OpenFile swapFile;
@@ -256,6 +305,9 @@ public class VMKernel extends UserKernel {
 	public static Lock spLock;
 	public static Lock iptLock;
 	public static MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()];
+	
+	private static int clockhand = 0;
+
 	
 	// inherited variables
 //	/** Globally accessible reference to the synchronized console. */
