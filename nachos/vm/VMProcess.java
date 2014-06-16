@@ -41,9 +41,7 @@ public class VMProcess extends UserProcess {
 	        	entry.valid = false;
 	            Machine.processor().writeTLBEntry(i, entry);
 	            entry.valid = true;
-	            ptLocks[entry.vpn].acquire();
 	            pageTable[entry.vpn] = new TranslationEntry(entry);
-	            ptLocks[entry.vpn].release();
 	        }
 	    }
 	}
@@ -209,7 +207,9 @@ public class VMProcess extends UserProcess {
 		// entry should now be valid
 		
 		entry.used = true;
+		VMKernel.iptLock.acquire();
 		VMKernel.iPageTable[entry.ppn].pinned = true;
+		VMKernel.iptLock.release();
 		int realAddr = entry.ppn*pageSize + vpnOffset;
 		
 		// for now, just assume that virtual addresses equal physical addresses
@@ -242,8 +242,8 @@ public class VMProcess extends UserProcess {
 				else
 				{
 					TranslationEntry prevEntry = pageTable[currVpn-1];
-					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
 					VMKernel.iptLock.acquire();
+					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
 					VMKernel.fullyPinned.wake();
 					VMKernel.iptLock.release();
 //					pageTable[currVpn - 1].used = false;
@@ -252,7 +252,9 @@ public class VMProcess extends UserProcess {
 						handleTLBMiss(currVpn * pageSize);
 					
 					currEntry.used = true;
+					VMKernel.iptLock.acquire();
 					VMKernel.iPageTable[currEntry.ppn].pinned = true;
+					VMKernel.iptLock.release();
 					pageOffset = 0;
 					currPpn = currEntry.ppn;
 					currAddr = currPpn * pageSize;
@@ -267,8 +269,8 @@ public class VMProcess extends UserProcess {
 			
 		}
 		TranslationEntry currEntry = pageTable[currVpn];
-		VMKernel.iPageTable[currEntry.ppn].pinned = false;
 		VMKernel.iptLock.acquire();
+		VMKernel.iPageTable[currEntry.ppn].pinned = false;
 		VMKernel.fullyPinned.wake();
 		VMKernel.iptLock.release();
 //		pageTable[currVpn].used = false;
@@ -308,9 +310,23 @@ public class VMProcess extends UserProcess {
 			handleTLBMiss(vaddr);
 //		validateEntry(vpn, entry);
 		// entry should now be valid
+		entry = pageTable[vpn];
+
 		
 		entry.used = true;
-		VMKernel.iPageTable[entry.ppn].pinned = true;
+		VMKernel.iptLock.acquire();
+		
+		VMKernel.MetaData mData = VMKernel.iPageTable[entry.ppn];
+		while (mData == null) {
+			if (entry.valid)
+				System.err.println("WFT");
+			VMKernel.iptLock.release();
+			handlePageFault(vpn);
+			VMKernel.iptLock.acquire();
+			mData = VMKernel.iPageTable[entry.ppn];
+		}
+		mData.pinned = true;
+		VMKernel.iptLock.release();
 		int realAddr = entry.ppn*pageSize + vpnOffset;
 		
 		// for now, just assume that virtual addresses equal physical addresses
@@ -343,8 +359,8 @@ public class VMProcess extends UserProcess {
 				else
 				{
 					TranslationEntry prevEntry = pageTable[currVpn-1];
-					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
 					VMKernel.iptLock.acquire();
+					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
 					VMKernel.fullyPinned.wake();
 					VMKernel.iptLock.release();
 //					pageTable[currVpn - 1].used = false;
@@ -361,7 +377,9 @@ public class VMProcess extends UserProcess {
 						handleTLBMiss(currVpn * pageSize);
 					
 					currEntry.used = true;
+					VMKernel.iptLock.acquire();
 					VMKernel.iPageTable[currEntry.ppn].pinned = true;
+					VMKernel.iptLock.release();
 					pageOffset = 0;
 					currPpn = currEntry.ppn;
 					currAddr = currPpn * pageSize;
@@ -376,8 +394,8 @@ public class VMProcess extends UserProcess {
 			
 		}
 		TranslationEntry currEntry = pageTable[currVpn];
-		VMKernel.iPageTable[currEntry.ppn].pinned = false;
 		VMKernel.iptLock.acquire();
+		VMKernel.iPageTable[currEntry.ppn].pinned = false;
 		VMKernel.fullyPinned.wake();
 		VMKernel.iptLock.release();
 //		pageTable[currVpn].used = false;
@@ -493,19 +511,24 @@ public class VMProcess extends UserProcess {
         	
         	TranslationEntry swapEntry = Machine.processor().readTLBEntry(tlbToBeSwapped);
         	
+        	ptLocks[swapEntry.vpn].acquire();
         	//Check entry against page table entry for validity
         	if (swapEntry.valid) {
                 this.pageTable[swapEntry.vpn].dirty = swapEntry.dirty;
                 this.pageTable[swapEntry.vpn].used = swapEntry.used;
             }
+        	ptLocks[swapEntry.vpn].release();
         }
         
+        ptLocks[missPage].acquire();
         //Get the translation entry for the missed entry
         TranslationEntry entryToBeAdded = pageTable[missPage];
         
         int loopCheck = 0;
         while (!entryToBeAdded.valid) {
+        	ptLocks[missPage].release();
             handlePageFault(missPage);
+            ptLocks[missPage].acquire();
             if (loopCheck++ == 1)
             	Lib.debug(dbgProcess, "In handleTLBMiss loop more than once");
 //            entryToBeAdded = new TranslationEntry(pageTable[missPage]);
@@ -513,6 +536,7 @@ public class VMProcess extends UserProcess {
         
         //Finally add the entry in the TLB :) 
         Machine.processor().writeTLBEntry(tlbToBeSwapped, entryToBeAdded);
+        ptLocks[missPage].release();
 	}
 	
 	// The fault here is actually the vpn and not a badVaddr
@@ -538,6 +562,10 @@ public class VMProcess extends UserProcess {
 				CoffSection sect = coff.getSection(coffSectNum);
 				sect.loadPage(getCoffSectOffset(fault), entry.ppn);
 
+			} else {
+				byte[] mem = Machine.processor().getMemory();
+				byte[] buf = new byte[pageSize];
+				System.arraycopy(buf, 0, mem, entry.ppn*pageSize, pageSize);
 			}
 			// just a new blank page for stack or args
 			entry.valid = true;

@@ -138,7 +138,7 @@ public class VMKernel extends UserKernel {
 		data.ownProcess.spnLock.acquire();
 		Integer spn = data.ownProcess.vpnToSpn.get(data.vpn);
 		if (spn == null) {
-			// add a page to swapPages to increas its size i necessary
+			// add a page to swapPages to increase its size i necessary
 			spLock.acquire();
 			if (swapPages.size() == 0)
 				swapPages.add(++swapPageCount);
@@ -165,9 +165,11 @@ public class VMKernel extends UserKernel {
 
 		data.getEntry().valid = false;
 		
+		iptLock.acquire();
+		
 		iPageTable[ppn] = null;
 		
-		iptLock.acquire();
+
 		
 		return true;
 //        TranslationEntry swapPage = null;
@@ -403,13 +405,13 @@ public class VMKernel extends UserKernel {
 	//Define Variables
 	//*******************************************************************************************
 	
-	protected static ArrayList<Integer> pinnedPages;
-	protected static ArrayList<TranslationEntry> pagesCanBeSwapped;
+//	protected static ArrayList<Integer> pinnedPages;
+//	protected static ArrayList<TranslationEntry> pagesCanBeSwapped;
 //	protected static LinkedList<Integer> freePages;
 	protected static int swapPageCount = 5;
 	protected static LinkedList<Integer> swapPages;
-	protected static HashMap<MetaData, TranslationEntry> swapSpace;
-	protected static HashMap<MetaData, Integer> diskLoc; 
+//	protected static HashMap<MetaData, TranslationEntry> swapSpace;
+//	protected static HashMap<MetaData, Integer> diskLoc; 
 	public static OpenFile swapFile;
 	private static String swapName = ".teamGabNap";
 	public static Lock pinLock;
