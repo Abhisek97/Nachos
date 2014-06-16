@@ -19,6 +19,12 @@ public class VMProcess extends UserProcess {
 	 */
 	public VMProcess() {
 		super();
+		vpnToSpn = new ConcurrentHashMap<Integer,Integer>();
+		spnLock = new Lock();
+		ptLocks = new Lock[Machine.processor().getNumPhysPages()];
+		for (int i = 0; i < ptLocks.length; i++) {
+			ptLocks[i] = new Lock();
+		}
 //		spnTable = new Integer[pageTable.length];
 	}
 
@@ -34,7 +40,10 @@ public class VMProcess extends UserProcess {
 	        if (entry.valid) {
 	        	entry.valid = false;
 	            Machine.processor().writeTLBEntry(i, entry);
+	            entry.valid = true;
+	            ptLocks[entry.vpn].acquire();
 	            pageTable[entry.vpn] = new TranslationEntry(entry);
+	            ptLocks[entry.vpn].release();
 	        }
 	    }
 	}
@@ -47,14 +56,15 @@ public class VMProcess extends UserProcess {
 //		super.restoreState();
 		
 		//Is this needed??
-		for (int i = 0; i < Machine.processor().getTLBSize(); i++) {
-	        TranslationEntry entry = Machine.processor().readTLBEntry(i);
-	        if (entry.valid) {
-	        	entry.valid = false;
-	            Machine.processor().writeTLBEntry(i, entry);
-	            pageTable[entry.vpn] = new TranslationEntry(entry);
-	        }
-	    }
+//		for (int i = 0; i < Machine.processor().getTLBSize(); i++) {
+//	        TranslationEntry entry = Machine.processor().readTLBEntry(i);
+//	        if (entry.valid) {
+//	        	entry.valid = false;
+//	            Machine.processor().writeTLBEntry(i, entry);
+//	            entry.valid = true;
+//	            pageTable[entry.vpn] = new TranslationEntry(entry);
+//	        }
+//	    }
 	}
 
 	/**
@@ -70,6 +80,8 @@ public class VMProcess extends UserProcess {
 			Lib.debug(dbgProcess, "\tinsufficient physical memory");
 			return false;
 		}
+		
+		vpnToCoffSect = new int[numPages];
 		
 		// prep for easy swap-in/out checks later
 		for (int s = 0; s < coff.getNumSections(); s++) {
@@ -128,11 +140,40 @@ public class VMProcess extends UserProcess {
 		// TODO:
 		// handle removing this process's owned swap pages before unloading
 		// the pages using the super class's unloadSections
+		spnLock.acquire();
 		for (Integer spn : vpnToSpn.values()) {
+			VMKernel.spLock.acquire();
 			VMKernel.swapPages.addFirst(spn.intValue());
+			VMKernel.spLock.release();
+		}
+		spnLock.release();
+		
+		for (int i = 0; i < pageTable.length; i++) {
+			ptLocks[i].acquire();
+			TranslationEntry entry = pageTable[i];
+			if (entry.valid == true) {
+				ptLocks[i].release();
+				VMKernel.iptLock.acquire();
+				
+				VMKernel.physicalPages.add(entry.ppn);
+				VMKernel.iPageTable[entry.ppn] = null;
+				VMKernel.fullyPinned.wake();
+				VMKernel.iptLock.release();
+			} else {
+				ptLocks[i].release();
+			}
 		}
 		
 		super.unloadSections();
+	}
+	
+	private boolean vpnInTlb(int vpn) {
+		for (int i = 0; i < Machine.processor().getTLBSize(); i ++) {
+			TranslationEntry entry = Machine.processor().readTLBEntry(i);
+			if (entry.vpn == vpn && entry.valid == true)
+				return true;
+		}
+		return false;
 	}
 	
 	/**
@@ -162,8 +203,8 @@ public class VMProcess extends UserProcess {
 		int vpnOffset = Processor.offsetFromAddress(vaddr);
 		TranslationEntry entry = pageTable[vpn];
 		
-		if (!entry.valid)
-			handlePageFault(vpn);
+		if (!vpnInTlb(vpn))
+			handleTLBMiss(vaddr);
 //		validateEntry(vpn, entry);
 		// entry should now be valid
 		
@@ -201,11 +242,14 @@ public class VMProcess extends UserProcess {
 				else
 				{
 					TranslationEntry prevEntry = pageTable[currVpn-1];
-					VMKernel.iPageTable[prevEntry.ppn].pinned = true;
+					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
+					VMKernel.iptLock.acquire();
+					VMKernel.fullyPinned.wake();
+					VMKernel.iptLock.release();
 //					pageTable[currVpn - 1].used = false;
 					TranslationEntry currEntry = pageTable[currVpn];
-					if (!currEntry.valid)
-						handlePageFault(currVpn);
+					if (!vpnInTlb(currVpn))
+						handleTLBMiss(currVpn * pageSize);
 					
 					currEntry.used = true;
 					VMKernel.iPageTable[currEntry.ppn].pinned = true;
@@ -224,6 +268,9 @@ public class VMProcess extends UserProcess {
 		}
 		TranslationEntry currEntry = pageTable[currVpn];
 		VMKernel.iPageTable[currEntry.ppn].pinned = false;
+		VMKernel.iptLock.acquire();
+		VMKernel.fullyPinned.wake();
+		VMKernel.iptLock.release();
 //		pageTable[currVpn].used = false;
 		return written;
 	}
@@ -257,8 +304,8 @@ public class VMProcess extends UserProcess {
 		TranslationEntry entry = pageTable[vpn];
 		
 		// ensures the current entry is a valid one or makes it valid
-		if (!entry.valid)
-			handlePageFault(vpn);
+		if (!vpnInTlb(vpn))
+			handleTLBMiss(vaddr);
 //		validateEntry(vpn, entry);
 		// entry should now be valid
 		
@@ -297,6 +344,9 @@ public class VMProcess extends UserProcess {
 				{
 					TranslationEntry prevEntry = pageTable[currVpn-1];
 					VMKernel.iPageTable[prevEntry.ppn].pinned = false;
+					VMKernel.iptLock.acquire();
+					VMKernel.fullyPinned.wake();
+					VMKernel.iptLock.release();
 //					pageTable[currVpn - 1].used = false;
 					TranslationEntry currEntry = pageTable[currVpn];
 					
@@ -307,8 +357,8 @@ public class VMProcess extends UserProcess {
 						break;
 					}
 						
-					if (!currEntry.valid)
-						handlePageFault(currVpn);
+					if (!vpnInTlb(currVpn))
+						handleTLBMiss(currVpn * pageSize);
 					
 					currEntry.used = true;
 					VMKernel.iPageTable[currEntry.ppn].pinned = true;
@@ -326,7 +376,10 @@ public class VMProcess extends UserProcess {
 			
 		}
 		TranslationEntry currEntry = pageTable[currVpn];
-		VMKernel.iPageTable[currEntry.ppn].pinned = true;
+		VMKernel.iPageTable[currEntry.ppn].pinned = false;
+		VMKernel.iptLock.acquire();
+		VMKernel.fullyPinned.wake();
+		VMKernel.iptLock.release();
 //		pageTable[currVpn].used = false;
 		return written;
 	}
@@ -412,7 +465,7 @@ public class VMProcess extends UserProcess {
 	
 	protected void handleTLBMiss(int miss){
         
-		int missPage = Processor.offsetFromAddress(miss);
+		int missPage = Processor.pageFromAddress(miss);
 		
         int tlbToBeSwapped = -1;
         
@@ -471,12 +524,13 @@ public class VMProcess extends UserProcess {
 		// or swapping in a page from memory
 		if (entry.dirty)
 		{
-			entry.ppn = VMKernel.swapIn(fault, this);
+			entry.ppn = VMKernel.allocPage(fault, this, entry.readOnly);
+			VMKernel.swapIn(entry.vpn, this);
 			entry.valid = true;
 		}
 		else { // entry not dirty
 			int coffSectNum = vpnToCoffSect[fault];
-			entry.ppn = VMKernel.allocPage(fault, this, false, entry.readOnly);
+			entry.ppn = VMKernel.allocPage(fault, this, entry.readOnly);
 			
 			// if in a coff section, we need to load it
 			if (coffSectNum != -3) {
@@ -512,7 +566,10 @@ public class VMProcess extends UserProcess {
 	private int[] vpnToCoffSect;
 	
 	// keeps track of 
+	public Lock spnLock;
 	public ConcurrentHashMap<Integer, Integer> vpnToSpn;
+	
+	public Lock[] ptLocks;
 	
 //	private Integer[] spnTable;
 	

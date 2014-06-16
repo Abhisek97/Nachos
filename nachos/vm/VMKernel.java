@@ -25,21 +25,25 @@ public class VMKernel extends UserKernel {
 	 * Initialize this kernel.
 	 */
 	public void initialize(String[] args) {
-		
+		super.initialize(args);
 
-		swapSpace = new HashMap<MetaData, TranslationEntry>();
-		pagesCanBeSwapped = new ArrayList<TranslationEntry>();
-		freePages = new LinkedList<Integer>();
-		pinnedPages = new ArrayList<Integer>();
+//		swapSpace = new HashMap<MetaData, TranslationEntry>();
+//		pagesCanBeSwapped = new ArrayList<TranslationEntry>();
+//		freePages = new LinkedList<Integer>();
+//		pinnedPages = new ArrayList<Integer>();
+		
+		swapPages = new LinkedList<Integer>();
 		
 		for(int i=0; i< swapPageCount; i++){
             swapPages.add(i);
         }
 		
-		pinnedPages = new ArrayList<Integer>();
-		pinLock = new Lock();
+//		pinnedPages = new ArrayList<Integer>();
+//		pinLock = new Lock();
 		iptLock = new Lock();
 		spLock = new Lock();
+//		clockLock = new Lock();
+		fullyPinned = new Condition(iptLock);
 		
 //		for (int i = 0; i < iPageTable.length; i++)
 //		{
@@ -48,7 +52,7 @@ public class VMKernel extends UserKernel {
 		
 		swapFile = ThreadedKernel.fileSystem.open(swapName, true);
 		
-		super.initialize(args);
+
 	}
 
 	public static class MetaData {
@@ -104,120 +108,196 @@ public class VMKernel extends UserKernel {
 	
 
 	
-	public static void pinPage(Integer i){
-        pinLock.acquire();
-        pinnedPages.add(i);
-        pinLock.release();
-    }
+//	public static void pinPage(Integer i){
+//        pinLock.acquire();
+//        pinnedPages.add(i);
+//        pinLock.release();
+//    }
+//	
+//	public static void unPinPage(Integer i){
+//        pinLock.acquire();
+//        pinnedPages.remove(i);
+//        pinLock.release();
+//    }
+//	
+//	public static boolean contains(TranslationEntry i){
+//		pinLock.acquire();
+//		boolean result = pinnedPages.contains(i);
+//		pinLock.release();
+//		return result;
+//	}
 	
-	public static void unPinPage(Integer i){
-        pinLock.acquire();
-        pinnedPages.remove(i);
-        pinLock.release();
-    }
-	
-	public static boolean contains(TranslationEntry i){
-		pinLock.acquire();
-		boolean result = pinnedPages.contains(i);
-		pinLock.release();
-		return result;
-	}
-	
-	
-	public static int swapOut(){
-        TranslationEntry swapPage = null;
-
-        if(!pagesCanBeSwapped.isEmpty()){
-            int i =0;
-            while(i< pagesCanBeSwapped.size())
-            {
-                spLock.acquire();
-                swapPage = pagesCanBeSwapped.get(i);
-                spLock.release();
-                
-                if(!contains(swapPage)){
-                    spLock.acquire();
-                    swapPage = pagesCanBeSwapped.remove(i);
-                    spLock.release();
-                    break;
-                }
-                i = (i+1) % (pagesCanBeSwapped.size());
-            }
-        }
-        int removed = -1;
-        
-        iptLock.acquire();
-        for(int i = 0; i < iPageTable.length; i++){
-        	
-        	//index is the ppn
-            if(i == swapPage.ppn){
-                removed = i;
-                break;
-            }
-        }
-
-        if(removed!=-1)
-        	iPageTable[removed] = null;
-        iptLock.release();
-
+	// assumes you hold iptLock already
+	public static boolean swapOut(int ppn){
+		// synchronizing tlb occurs b4 this function call
+		
+		MetaData data = iPageTable[ppn];
+		data.pinned = true;
+		iptLock.release();
+		
+		data.ownProcess.spnLock.acquire();
+		Integer spn = data.ownProcess.vpnToSpn.get(data.vpn);
+		if (spn == null) {
+			// add a page to swapPages to increas its size i necessary
+			spLock.acquire();
+			if (swapPages.size() == 0)
+				swapPages.add(++swapPageCount);
+			spn = swapPages.removeFirst();
+			spLock.release();
+			data.ownProcess.vpnToSpn.put(data.vpn, spn);
+		}
+		data.ownProcess.spnLock.release();
+		
+		
         int size = Processor.pageSize;
+        byte[] mem = Machine.processor().getMemory();
         
-        //if dirty, write to swap space
-        if(swapPage.dirty)  {
-        	byte[] pageContents = new byte[size];
-        	byte[] memory = Machine.processor().getMemory();
-
-        	System.arraycopy(memory, swapPage.ppn*size, pageContents, 0, size);
-        	int loc = freePages.removeFirst()*size;
-        	swapFile.write(loc, pageContents, 0, size);
+        int writtenBytes = 0;
+        
+        while (writtenBytes < size) {
+            writtenBytes += swapFile.write(spn*size+writtenBytes, mem, ppn*size+writtenBytes, size-writtenBytes);
+            if (writtenBytes == -1) {
+            	Lib.debug(dbgVM, "Error occurred writing to swapFile");
+            }
         }
-        
-        MetaData removedPage = iPageTable[removed];
-        swapSpace.put(removedPage,swapPage);
-        
-        
-        return swapPage.ppn;
+
+//        System.arraycopy(pageContent,0,mem,data.getEntry().ppn,size);
+
+		data.getEntry().valid = false;
+		
+		iPageTable[ppn] = null;
+		
+		iptLock.acquire();
+		
+		return true;
+//        TranslationEntry swapPage = null;
+
+//        if(!pagesCanBeSwapped.isEmpty()){
+//            int i =0;
+//            while(i< pagesCanBeSwapped.size())
+//            {
+//                spLock.acquire();
+//                swapPage = pagesCanBeSwapped.get(i);
+//                spLock.release();
+//                
+//                if(!contains(swapPage)){
+//                    spLock.acquire();
+//                    swapPage = pagesCanBeSwapped.remove(i);
+//                    spLock.release();
+//                    break;
+//                }
+//                i = (i+1) % (pagesCanBeSwapped.size());
+//            }
+//        }
+//        int removed = -1;
+//        
+//        iptLock.acquire();
+//        for(int i = 0; i < iPageTable.length; i++){
+//        	
+//        	//index is the ppn
+//            if(i == swapPage.ppn){
+//                removed = i;
+//                break;
+//            }
+//        }
+//
+//        if(removed!=-1)
+//        	iPageTable[removed] = null;
+//        iptLock.release();
+//
+//        int size = Processor.pageSize;
+//        
+//        //if dirty, write to swap space
+//        if(swapPage.dirty)  {
+//        	byte[] pageContents = new byte[size];
+//        	byte[] memory = Machine.processor().getMemory();
+//
+//        	System.arraycopy(memory, swapPage.ppn*size, pageContents, 0, size);
+//        	int loc = freePages.removeFirst()*size;
+//        	swapFile.write(loc, pageContents, 0, size);
+//        }
+//        
+//        MetaData removedPage = iPageTable[removed];
+//        swapSpace.put(removedPage,swapPage);
+//        
+//        
+//        return swapPage.ppn;
     }
 	
-	public static int swapIn(int vpn, VMProcess process){
-        TranslationEntry freeEntry = allocEntry(vpn, process, true, false);
+	// assumes you already hold the iptLock
+	public static boolean swapIn(int vpn, VMProcess process){
+//        TranslationEntry freeEntry = allocEntry(vpn, process, true, false);
         MetaData data = new MetaData(vpn, process, false);
         
-        int loc = diskLoc.get(data);
+//        int loc = diskLoc.get(data);
+        iptLock.acquire();
+		iPageTable[data.getEntry().ppn] = data;
+		data.pinned = true;
+		iptLock.release();
         int size = Processor.pageSize;
         
         byte[] pageContent = new byte[size];
 
+        Integer spn = process.vpnToSpn.get(vpn);
 
-        swapFile.read(loc, pageContent,0,size);
-        byte[] mem = Machine.processor().getMemory();
-        System.arraycopy(pageContent,0,mem,freeEntry.ppn*size,size);
-        swapSpace.remove(data);
-        freePages.add(freeEntry.ppn);
+        int writtenBytes = 0;
         
-        diskLoc.remove(data);
+        while (writtenBytes < size) {
+            writtenBytes += swapFile.read(spn*size+writtenBytes, pageContent, writtenBytes, size-writtenBytes);
+            if (writtenBytes == -1) {
+            	Lib.debug(dbgVM, "Error occurred reading from swapFile");
+            }
+        }
+        byte[] mem = Machine.processor().getMemory();
+        System.arraycopy(pageContent,0,mem,data.getEntry().ppn*size,size);
+        
+        iptLock.acquire();
+        data.pinned = false;
+        iptLock.release();
+//        swapSpace.remove(data);
+//        freePages.add(freeEntry.ppn);
+        
+//        diskLoc.remove(data);
 
-        return freeEntry.ppn;
+        return true;
 
     }
 	
-	public static int allocPage(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
+	public static int allocPage(int vpn, VMProcess process, boolean readOnly){
 		
 		// kernel needs a static condition variable for all pages pinned
 		int ppn = -1;
-		int originalHand = clockhand;
 		
+
+		
+		physPageMutex.P();
 		if (physicalPages.size() != 0)
-			ppn = physicalPages.getFirst();
+			ppn = physicalPages.pollFirst();
+		physPageMutex.V();
+		
+		iptLock.acquire(); // protects ipt and clockhand as well
+		int originalHand = clockhand;
 		
 		while (ppn < 0)
 		{
 			
+			
+			clockhand = (clockhand + 1) % VMKernel.iPageTable.length;
+//			if (clockhand == originalHand)
+//			{
+//				// condition variable wait
+//				fullyPinned.sleep();
+//			}
+			
+			physPageMutex.P();
 			if (physicalPages.size() != 0) {
-				ppn = physicalPages.getFirst();
+				ppn = physicalPages.pollFirst();
+				physPageMutex.V();
 				break;
 			}
+			physPageMutex.V();
 //			ppn = VMKernel.allocPage(fault, this, false, faultEntry.readOnly);
+			
 			
 			VMKernel.MetaData currMet = VMKernel.iPageTable[clockhand];
 			
@@ -229,7 +309,7 @@ public class VMKernel extends UserKernel {
 
 				for (int i = 0; i < Machine.processor().getTLBSize(); i++) {
 			        TranslationEntry entry = Machine.processor().readTLBEntry(i);
-			        if (entry.vpn == currEntry.vpn) {
+			        if (entry.vpn == currEntry.vpn && entry.valid == true) {
 			            currMet.getPT()[entry.vpn] = new TranslationEntry(entry);
 			            tlbIndex = i;
 			            break;
@@ -239,78 +319,85 @@ public class VMKernel extends UserKernel {
 				if(currEntry.used)
 					currEntry.used = false;
 				else {
+					currEntry.valid = false;
+					
+					// Invalidate TLB entry if vpn is in it
+					if (tlbIndex != -1) {
+						Machine.processor().writeTLBEntry(tlbIndex, currEntry);
+					}
+					
+					ppn = clockhand;
+					
 					if (currEntry.dirty) {
-						// evict and swap
-						if (tlbIndex != -1) {
-							
-						}
+						// evict and swap; clockhand is current ppn
+						swapOut(clockhand);
 					}
 					else {
 						// evict without swapping
-						currEntry.valid = false;
-						// 
-						
-						//
 					}
 				}
 			}
-			
-			clockhand = (clockhand + 1) % VMKernel.iPageTable.length;
-			if (clockhand == originalHand)
-			{
-				// condition variable wait
-			}
+
 			
 		} // end while (ppn < 0)
 		
+		iPageTable[ppn] = new MetaData(vpn, process, false);
+		
+		iptLock.release();
+
+		
+		return ppn;
+		
 //        int ppn = -1;
+		
+		
         
-        if(freePages.size() > 0) {
-            ppn = freePages.getFirst();
-            return ppn;
-        }
-        else
-            ppn = swapOut();
-
-        TranslationEntry newPage = new TranslationEntry(vpn, ppn, true, readOnly, false, false);
-
-        if(canSwap)
-            pagesCanBeSwapped.add(newPage);
-
-        MetaData data = new MetaData(vpn, process, false);
-        
-        iptLock.acquire();
-        iPageTable[ppn] =  data;
-        iptLock.release();
-
-        return ppn;
+//        if(freePages.size() > 0) {
+//            ppn = freePages.pollFirst();
+//            return ppn;
+//        }
+//        else
+//            ppn = swapOut();
+//
+//        TranslationEntry newPage = new TranslationEntry(vpn, ppn, true, readOnly, false, false);
+//
+//        if(canSwap)
+//            pagesCanBeSwapped.add(newPage);
+//
+//        MetaData data = new MetaData(vpn, process, false);
+//        
+//        iptLock.acquire();
+//        iPageTable[ppn] =  data;
+//        iptLock.release();
+//
+//        return ppn;
 
     }
 	
 	//Does the same thing as allocPage but i needed a way to return the translation entry :( kinda redundant 
-	public static TranslationEntry allocEntry(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
-        int ppn = -1;
-        
-        if(freePages.size() > 0) {
-            ppn = freePages.getFirst();
-        }
-        else
-            ppn = swapOut();
-
-        TranslationEntry newPage = new TranslationEntry(vpn, ppn, true, readOnly, false, false);
-
-        if(canSwap)
-            pagesCanBeSwapped.add(newPage);
-
-        MetaData data = new MetaData(vpn, process, false);
-        
-        iptLock.acquire();
-        iPageTable[ppn] =  data;
-        iptLock.release();
-
-        return newPage;
-
-    }
+//	public static TranslationEntry allocEntry(int vpn, VMProcess process, boolean canSwap, boolean readOnly){
+//        int ppn = -1;
+//        
+//        if(freePages.size() > 0) {
+//            ppn = freePages.pollFirst();
+//        }
+//        else
+//            ppn = swapOut();
+//
+//        TranslationEntry newPage = new TranslationEntry(vpn, ppn, true, readOnly, false, false);
+//
+//        if(canSwap)
+//            pagesCanBeSwapped.add(newPage);
+//
+//        MetaData data = new MetaData(vpn, process, false);
+//        
+//        iptLock.acquire();
+//        iPageTable[ppn] =  data;
+//        iptLock.release();
+//
+//        return newPage;
+//
+//    }
 	
 	
 	//Define Variables
@@ -330,7 +417,9 @@ public class VMKernel extends UserKernel {
 	public static Lock iptLock;
 	public static MetaData[] iPageTable = new MetaData[Machine.processor().getNumPhysPages()];
 	
+//	private static Lock clockLock;
 	private static int clockhand = 0;
+	public static Condition fullyPinned;
 
 	
 	// inherited variables
