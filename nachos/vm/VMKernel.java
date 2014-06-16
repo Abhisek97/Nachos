@@ -163,9 +163,11 @@ public class VMKernel extends UserKernel {
 
 //        System.arraycopy(pageContent,0,mem,data.getEntry().ppn,size);
 
+		iptLock.acquire();
+		
 		data.getEntry().valid = false;
 		
-		iptLock.acquire();
+
 		
 		iPageTable[ppn] = null;
 		
@@ -312,7 +314,7 @@ public class VMKernel extends UserKernel {
 				for (int i = 0; i < Machine.processor().getTLBSize(); i++) {
 			        TranslationEntry entry = Machine.processor().readTLBEntry(i);
 			        if (entry.vpn == currEntry.vpn && entry.valid == true) {
-			            currMet.getPT()[entry.vpn] = new TranslationEntry(entry);
+			            currMet.getPT()[entry.vpn] = entry;
 			            tlbIndex = i;
 			            break;
 			        }

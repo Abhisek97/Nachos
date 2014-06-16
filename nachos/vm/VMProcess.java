@@ -21,7 +21,11 @@ public class VMProcess extends UserProcess {
 		super();
 		vpnToSpn = new ConcurrentHashMap<Integer,Integer>();
 		spnLock = new Lock();
-		ptLocks = new Lock[Machine.processor().getNumPhysPages()];
+//		pageTable = new TranslationEntry[Machine.processor().getNumPhysPages()];
+//		for (int i = 0; i < pageTable.length; i++) {
+//			pageTable[i] = new TranslationEntry(i, i, false, false, false, false);
+//		}
+		ptLocks = new Lock[pageTable.length];
 		for (int i = 0; i < ptLocks.length; i++) {
 			ptLocks[i] = new Lock();
 		}
@@ -41,7 +45,7 @@ public class VMProcess extends UserProcess {
 	        	entry.valid = false;
 	            Machine.processor().writeTLBEntry(i, entry);
 	            entry.valid = true;
-	            pageTable[entry.vpn] = new TranslationEntry(entry);
+	            pageTable[entry.vpn] = entry;
 	        }
 	    }
 	}
@@ -80,6 +84,14 @@ public class VMProcess extends UserProcess {
 		}
 		
 		vpnToCoffSect = new int[numPages];
+//		pageTable = new TranslationEntry[numPages];
+//		for (int i = 0; i < pageTable.length; i++) {
+//			pageTable[i] = new TranslationEntry(i, i, false, false, false, false);
+//		}
+//		ptLocks = new Lock[numPages];
+//		for (int i = 0; i < ptLocks.length; i++) {
+//			ptLocks[i] = new Lock();
+//		}
 		
 		// prep for easy swap-in/out checks later
 		for (int s = 0; s < coff.getNumSections(); s++) {
@@ -146,6 +158,8 @@ public class VMProcess extends UserProcess {
 		}
 		spnLock.release();
 		
+		saveState();
+		
 		for (int i = 0; i < pageTable.length; i++) {
 			ptLocks[i].acquire();
 			TranslationEntry entry = pageTable[i];
@@ -153,7 +167,7 @@ public class VMProcess extends UserProcess {
 				ptLocks[i].release();
 				VMKernel.iptLock.acquire();
 				
-				VMKernel.physicalPages.add(entry.ppn);
+//				VMKernel.physicalPages.add(entry.ppn);
 				VMKernel.iPageTable[entry.ppn] = null;
 				VMKernel.fullyPinned.wake();
 				VMKernel.iptLock.release();
@@ -310,19 +324,25 @@ public class VMProcess extends UserProcess {
 			handleTLBMiss(vaddr);
 //		validateEntry(vpn, entry);
 		// entry should now be valid
+
+		VMKernel.iptLock.acquire();
 		entry = pageTable[vpn];
 
 		
 		entry.used = true;
-		VMKernel.iptLock.acquire();
 		
 		VMKernel.MetaData mData = VMKernel.iPageTable[entry.ppn];
 		while (mData == null) {
 			if (entry.valid)
 				System.err.println("WFT");
 			VMKernel.iptLock.release();
-			handlePageFault(vpn);
+			entry.ppn = VMKernel.allocPage(vpn, this, entry.readOnly);
 			VMKernel.iptLock.acquire();
+			VMKernel.iPageTable[entry.ppn] = new VMKernel.MetaData(entry.vpn, this, false);
+			Integer hi = VMKernel.physicalPages.getFirst();
+//			VMKernel.iptLock.release();
+//			handlePageFault(vpn);
+//			VMKernel.iptLock.acquire();
 			mData = VMKernel.iPageTable[entry.ppn];
 		}
 		mData.pinned = true;
@@ -412,8 +432,8 @@ public class VMProcess extends UserProcess {
 		
 		byte[] memory = Machine.processor().getMemory();
 
-		if (vaddr < 0 || vaddr >= memory.length)
-			return false;
+//		if (vaddr < 0 || vaddr >= memory.length)
+//			return false;
 		
 		
 		int vpn = Processor.pageFromAddress(vaddr);
